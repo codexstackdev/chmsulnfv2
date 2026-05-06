@@ -12,6 +12,7 @@ import {
 } from "@imagekit/next";
 import { Spinner } from "@/components/ui/spinner";
 import { Progress } from "@/components/ui/progress";
+import { Input } from "@/components/ui/input";
 
 const Register = ({ isSuccess }: { isSuccess: () => void }) => {
   const [profilePreview, setProfilePreview] = useState("");
@@ -21,6 +22,7 @@ const Register = ({ isSuccess }: { isSuccess: () => void }) => {
     fullName: "",
     email: "",
     social: "",
+    studentId: "",
     password: "",
     confirmPassword: "",
   });
@@ -47,11 +49,13 @@ const Register = ({ isSuccess }: { isSuccess: () => void }) => {
       !registerData.email ||
       !registerData.fullName ||
       !registerData.password ||
-      !registerData.social
+      !registerData.social ||
+      !registerData.studentId
     )
       return toast.error("Missing fields");
     if (!fileRaw) return toast.error("No profie selected");
-    if(registerData.confirmPassword !== registerData.password) return toast.info("Password didn't match")
+    if (registerData.confirmPassword !== registerData.password)
+      return toast.info("Password didn't match");
     setLoading(true);
     let authParams;
     try {
@@ -81,6 +85,7 @@ const Register = ({ isSuccess }: { isSuccess: () => void }) => {
           registerData.email,
           registerData.social,
           registerData.password,
+          parseInt(registerData.studentId),
           uploadResponse.url as string,
           uploadResponse.fileId as string,
         );
@@ -91,6 +96,7 @@ const Register = ({ isSuccess }: { isSuccess: () => void }) => {
           registerData.fullName = "";
           registerData.password = "";
           registerData.social = "";
+          registerData.studentId;
           setProgress(0);
           setProfilePreview("");
           setFileRaw(null);
@@ -187,6 +193,22 @@ const Register = ({ isSuccess }: { isSuccess: () => void }) => {
               value={registerData.email}
               onChange={handleRegisterChange}
               placeholder="codex@university.edu"
+              className="w-full h-10 px-4 rounded-lg border border-input bg-background text-sm focus:border-ring outline-none transition-all placeholder:text-muted-foreground"
+            />
+          </div>
+          <div className="space-y-2">
+            <label className="text-sm font-medium text-foreground">
+              Student ID
+            </label>
+            <Input
+              type="number"
+              inputMode="numeric"
+              required={true}
+              pattern="[0-9]*"
+              name="studentId"
+              value={registerData.studentId}
+              onChange={handleRegisterChange}
+              placeholder="2024..."
               className="w-full h-10 px-4 rounded-lg border border-input bg-background text-sm focus:border-ring outline-none transition-all placeholder:text-muted-foreground"
             />
           </div>

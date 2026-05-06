@@ -9,6 +9,7 @@ import { Spinner } from "@/components/ui/spinner";
 const Login = () => {
   const [loginData, setLoginData] = useState({
     email: "",
+    studentId: "",
     password: ""
   });
   const router = useRouter();

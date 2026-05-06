@@ -29,12 +29,12 @@ export const authenticator = async () => {
   }
 };
 
-export const register = async(fullName:string, email:string, social:string, password:string, profile:string, profileId:string)=>{
+export const register = async(fullName:string, email:string, social:string, password:string, studentId:number, profile:string, profileId:string)=>{
   try {
     const req = await fetch("/api/v1/auth/register", {
       method: "POST",
       headers,
-      body: JSON.stringify({fullName, email, social, password, profile, profileId})
+      body: JSON.stringify({fullName, email, social, password, studentId, profile, profileId})
     });
     const data = await req.json();
     if(!data.success) return { success: false, message: data.message}
@@ -87,3 +87,37 @@ export const deleteImage = async(fileId:string)=>{
   }
 }
 //end of auth
+
+
+//Data
+
+export const getUser = async(id:string)=> {
+  try {
+    const req = await fetch(`/api/v1/data/user?id=${id}`, {
+      method: "GET",
+      headers
+    });
+    const data = await req.json();
+    if(!data.success) return { success: false, message: data.message}
+    return data;
+  } catch (error) {
+    return { success: false, message: handleError(error)}
+  }
+}
+
+export const updatePostedItem = async(id:string, itemId:string) => {
+   try {
+    const req = await fetch("/api/v1/update/addItem", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({id, itemId})
+    });
+    const data = await req.json();
+    if(!data.success) return { success: false, message: data.message}
+    return data;
+  } catch (error) {
+    return { success: false, message: handleError(error)}
+  }
+}
+
+//end of Data
