@@ -27,7 +27,7 @@ import {
   PlusCircle,
   LayoutDashboard,
   Loader2,
-  LockIcon, // Ensure Loader2 is imported
+  LockIcon,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -143,8 +143,6 @@ const UserProfile = ({ user }: { user: User | null }) => {
           <PlusCircle className="h-4 w-4" />
           <span className="text-sm font-bold">Report Item</span>
         </DropdownMenuItem>
-
-        <DropdownMenuSeparator className="my-1" />
 
         {user?.role === "admin" && (
           <DropdownMenuItem className="gap-2 py-2.5 cursor-pointer focus:bg-accent rounded-lg">
@@ -317,14 +315,13 @@ type CategoryProps = {
 const page = () => {
   const [activeCategory, setActiveCategory] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
-  const [viewMode, setViewMode] = useState("grid");
+  const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [items, setItems] = useState<ItemProps[]>([]);
   const [loading, setLoading] = useState(true);
   const setUser = useUser((s) => s.setUser);
   const user = useUser((s) => s.user);
-  const param = useParams();
-  const id = param.id;
   const router = useRouter();
+  const { id } = useParams();
 
   const categories: CategoryProps[] = [
     { name: "all", icon: Package },
@@ -337,7 +334,6 @@ const page = () => {
 
   useEffect(() => {
     const fetchUser = async () => {
-      if (user) return;
       const userData = await getUser(id as string);
       if (userData.success) {
         setUser(userData.user);
@@ -352,7 +348,7 @@ const page = () => {
       const data = snapshot.val();
       const loadedItems: ItemProps[] = data
         ? Object.keys(data).map((key) => ({
-            id: key,
+            id: parseInt(key),
             ...data[key],
           }))
         : [];
@@ -363,25 +359,23 @@ const page = () => {
     return () => {
       unsubscribe();
     };
-  }, []);
+  }, [setUser, router]);
 
-  const filteredItems = items
-    .sort((a, b) => {
-      if (b.createdAt < a.createdAt) return -1;
-      if (b.createdAt > a.createdAt) return 1;
-      return 0;
-    })
-    .filter(
-      (item) =>
-        (activeCategory === "all" || item.category === activeCategory) &&
-        (item.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          item.description.toLowerCase().includes(searchQuery.toLowerCase())),
-    );
+  const filteredItems = items.filter(
+    (item) =>
+      (activeCategory === "all" || item.category === activeCategory) &&
+      (item.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        item.description.toLowerCase().includes(searchQuery.toLowerCase()))
+  );
 
-  const itemCardVariants = {
-    hidden: { opacity: 0, y: 20 },
-    visible: { opacity: 1, y: 0, transition: { duration: 0.3 } },
-    exit: { opacity: 0, y: -20, transition: { duration: 0.2 } },
+  const containerVariants = {
+    hidden: { opacity: 0 },
+    visible: { opacity: 1, transition: { duration: 0.2, staggerChildren: 0.05 } },
+  };
+
+  const itemVariants = {
+    hidden: { opacity: 0, y: 10 },
+    visible: { opacity: 1, y: 0, transition: { duration: 0.2 } },
   };
 
   return (
@@ -443,27 +437,51 @@ const page = () => {
               </SheetContent>
             </Sheet>
             <div className="flex-1 text-base font-medium">
-              <h1 className="text-xl font-bold tracking-tight">Browse Items</h1>
+              <h1 className="text-xl font-bold tracking-tight">
+                Browse Items
+              </h1>
             </div>
-            <div className="relative ml-auto flex-1 md:grow-0">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                type="search"
-                placeholder="Search items..."
-                className="w-full rounded-lg bg-background pl-9 md:w-50 lg:w-84"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-              />
+            <div className="relative ml-auto flex items-center gap-2">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  type="search"
+                  placeholder="Search items..."
+                  className="w-full rounded-lg bg-background pl-9 md:w-50 lg:w-84"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                />
+              </div>
+              <div className="hidden sm:flex items-center gap-1"> 
+                <Button
+                  variant={viewMode === "grid" ? "default" : "outline"}
+                  size="icon"
+                  onClick={() => setViewMode("grid")}
+                  className="h-9 w-9"
+                >
+                  <Grid className="h-5 w-5" />
+                  <span className="sr-only">Grid View</span>
+                </Button>
+                <Button
+                  variant={viewMode === "list" ? "default" : "outline"}
+                  size="icon"
+                  onClick={() => setViewMode("list")}
+                  className="h-9 w-9"
+                >
+                  <List className="h-5 w-5" />
+                  <span className="sr-only">List View</span>
+                </Button>
+              </div>
+              <Button
+                onClick={() => router.push(`/addItem/${user?._id}`)}
+                className="hidden md:inline-flex"
+                size="sm"
+              >
+                <PlusCircle className="mr-2 h-4 w-4" />
+                Report Item
+              </Button>
+              <UserProfile user={user} />
             </div>
-            <Button
-              onClick={() => router.push(`/addItem/${user?._id}`)}
-              className="hidden md:inline-flex"
-              size="sm"
-            >
-              <PlusCircle className="mr-2 h-4 w-4" />
-              Report Item
-            </Button>
-            <UserProfile user={user} />
           </nav>
 
           <ScrollArea className="flex-1 p-4 sm:px-6 sm:py-0 lg:px-8">
@@ -475,16 +493,12 @@ const page = () => {
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                     exit={{ opacity: 0 }}
-                    transition={{ duration: 0.3 }}
+                    transition={{ duration: 0.2 }}
                     className="flex flex-col items-center justify-center py-24 text-center border-2 border-dashed rounded-[3rem] bg-muted/20"
                   >
                     <motion.div
                       animate={{ rotate: 360 }}
-                      transition={{
-                        duration: 1,
-                        repeat: Infinity,
-                        ease: "linear",
-                      }}
+                      transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
                       className="h-24 w-24 bg-card rounded-[2.5rem] flex items-center justify-center shadow-2xl mb-6"
                     >
                       <Loader2 className="h-10 w-10 text-primary opacity-40" />
@@ -493,17 +507,16 @@ const page = () => {
                       Loading Items...
                     </h3>
                     <p className="text-muted-foreground text-sm max-w-xs mx-auto font-medium mt-2">
-                      Please wait while we fetch the latest lost and found
-                      items.
+                      Please wait while we fetch the latest lost and found items.
                     </p>
                   </motion.div>
                 ) : filteredItems.length === 0 ? (
                   <motion.div
                     key="no-records-found"
-                    initial={{ opacity: 0, y: 20 }}
+                    initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -20 }}
-                    transition={{ duration: 0.3 }}
+                    exit={{ opacity: 0, y: -10 }}
+                    transition={{ duration: 0.2 }}
                     className="flex flex-col items-center justify-center py-24 text-center border-2 border-dashed rounded-[3rem] bg-muted/20"
                   >
                     <div className="h-24 w-24 bg-card rounded-[2.5rem] flex items-center justify-center shadow-2xl mb-6">
@@ -529,21 +542,28 @@ const page = () => {
                   </motion.div>
                 ) : (
                   <motion.div
-                    key="items-grid"
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -20 }}
-                    transition={{ duration: 0.3 }}
-                    className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
+                    key="items-display"
+                    initial="hidden"
+                    animate="visible"
+                    variants={containerVariants}
+                    className={viewMode === "grid"
+                      ? "grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
+                      : "space-y-4" 
+                    }
                   >
                     <AnimatePresence mode="popLayout">
-                      {filteredItems.map((item) => (
-                        <ItemCard
-                          key={item.id}
-                          item={item}
-                          viewMode={viewMode}
-                          visit={() => router.push(`/browse/${id}/${item.id}`)}
-                        />
+                      {filteredItems.sort((a,b) => {
+                        if(b.createdAt > a.createdAt) return 1
+                        if(b.createdAt < a.createdAt) return -1
+                        return 0
+                      }).map((item) => (
+                        <motion.div key={item.id} variants={itemVariants}>
+                          <ItemCard
+                            item={item}
+                            viewMode={viewMode}
+                            visit={() => router.push(`/browse/${id}/${item.id}`)}
+                          />
+                        </motion.div>
                       ))}
                     </AnimatePresence>
                   </motion.div>

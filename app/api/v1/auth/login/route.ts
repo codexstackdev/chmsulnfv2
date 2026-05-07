@@ -17,7 +17,7 @@ export async function POST(req:NextRequest){
         if(!user) return NextResponse.json({success: false, message: "User doesn't exist"}, {status: 400});
         const checkPassword = await bcrypt.compare(password, user.password);
         if(!checkPassword) return NextResponse.json({success: false, message: "Invalid password"}, {status: 400});
-        const token = await jwt.sign({id:user._id}, process.env.SECRET_KEY as string, {expiresIn: "1d"});
+        const token = await jwt.sign({id:user._id, role: user.role}, process.env.SECRET_KEY as string, {expiresIn: "1d"});
         const response = NextResponse.json({success: true, message: "Logged in successfully", id: user._id});
         response.cookies.set({
             name: "cred",

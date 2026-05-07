@@ -55,6 +55,11 @@ const AddItemPage = () => {
   const params = useParams();
   const id = params.id;
   const abortController = new AbortController();
+  const today = new Date();
+  const year = today.getFullYear();
+  const month = String(today.getMonth() + 1).padStart(2, "0");
+  const day = String(today.getDate()).padStart(2, "0");
+  const maxDate = `${year}-${month}-${day}`;
   const [itemData, setItemData] = useState({
     id: "",
     title: "",
@@ -328,6 +333,7 @@ const AddItemPage = () => {
                     <Input
                       type="date"
                       name="date"
+                      max={maxDate}
                       onChange={handleChange}
                       value={itemData.date}
                       className="h-12 pl-10 rounded-xl bg-card border-2 focus-visible:ring-primary"
