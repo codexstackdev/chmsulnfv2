@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   MapPin,
   Calendar,
@@ -12,7 +12,9 @@ import {
   Tag,
   Info,
   UserCheck,
-  Link,
+  Search,
+  PackageSearch,
+  FileText,
 } from "lucide-react";
 
 import { motion } from "framer-motion";
@@ -25,7 +27,6 @@ import { Separator } from "@/components/ui/separator";
 import { useParams, useRouter } from "next/navigation";
 import { child, get, ref } from "firebase/database";
 import { database } from "@/app/lib/firebase";
-import { format } from "date-fns";
 
 type User = {
   _id: string;
@@ -64,7 +65,7 @@ const fadeUp = {
 const ItemDetailPage = () => {
   const params = useParams();
   const itemId = params.itemId;
-
+  const userId = params.id;
   const [itemData, setItemData] = useState<ItemProps | null>(null);
 
   const router = useRouter();
@@ -85,7 +86,47 @@ const ItemDetailPage = () => {
     }
   }, [itemId]);
 
-  if (!itemData) return <p>Loading</p>;
+  const isLost = itemData?.itemType === "lost";
+
+  const content = useMemo(() => {
+    if (isLost) {
+      return {
+        badge: "Lost Report",
+        pageLabel: "Lost Item Report",
+        subtitle:
+          "Students who may have found this item can privately initiate a secure match request.",
+        cta: "I Found This Item",
+        protocolTitle: "Finder Verification",
+        protocolDescription:
+          "If you found this item, submit a private photo or proof so the owner can verify your claim securely.",
+        detailsTitle: "Lost Item Details",
+        statusLabel: "Currently Missing",
+        statusStyle: "bg-destructive text-destructive-foreground",
+        icon: Search,
+        postedBy: "Reported By",
+        locationLabel: "Last Seen",
+      };
+    }
+
+    return {
+      badge: "Found Item",
+      pageLabel: "Recovered Item",
+      subtitle:
+        "Potential owners must verify identifying details before claiming this item.",
+      cta: "Claim This Item",
+      protocolTitle: "Ownership Verification",
+      protocolDescription:
+        "To prevent false claims, the owner must provide the hidden identifying detail set by the finder.",
+      detailsTitle: "Recovery Details",
+      statusLabel: "Secured by Finder",
+      statusStyle: "bg-primary text-primary-foreground",
+      icon: PackageSearch,
+      postedBy: "Found By",
+      locationLabel: "Found At",
+    };
+  }, [isLost]);
+
+  const StatusIcon = content.icon;
 
   return (
     <div className="relative min-h-screen overflow-hidden bg-background text-foreground">
@@ -137,12 +178,12 @@ const ItemDetailPage = () => {
                 <div className="absolute left-5 top-5 z-20 md:left-7 md:top-7">
                   <Badge
                     className={`rounded-full border-none px-5 py-2 text-[10px] font-black uppercase tracking-[0.3em] ${
-                      itemData?.itemType === "lost"
+                      isLost
                         ? "bg-destructive text-destructive-foreground"
                         : "bg-primary text-primary-foreground"
                     }`}
                   >
-                    {itemData?.itemType}
+                    {content.badge}
                   </Badge>
                 </div>
 
@@ -179,7 +220,7 @@ const ItemDetailPage = () => {
 
                     <div className="min-w-0">
                       <p className="mb-1 text-[10px] font-black uppercase tracking-[0.3em] text-primary">
-                        Posted By
+                        {content.postedBy}
                       </p>
 
                       <h3 className="truncate text-lg font-bold text-foreground md:text-2xl">
@@ -187,22 +228,13 @@ const ItemDetailPage = () => {
                       </h3>
 
                       <p className="truncate text-sm text-muted-foreground">
-                        #{itemData?.user.studentId} ·{" "}
-                        {itemData?.user.role.slice(0, 1).toUpperCase() +
-                          itemData?.user.role.slice(1)}
+                        #{itemData?.user.studentId} · {itemData?.user.role}
                       </p>
 
-                      {itemData?.user.social && (
-                        <a
-                          href={itemData?.user.social}
-                          target="_blank"
-                          className="text-sm text-blue-600 hover:underline"
-                        >
-                          <span className="flex items-center gap-2">
-                            <Link className="w-4 h-4" />
-                            Social
-                          </span>
-                        </a>
+                      {itemData?.user.postedItems && (
+                        <p className="text-sm text-muted-foreground">
+                          Contributions: {itemData?.user.postedItems.length}
+                        </p>
                       )}
                     </div>
                   </div>
@@ -229,12 +261,22 @@ const ItemDetailPage = () => {
                 Recorded {itemData?.date}
               </div>
 
-              <h1 className="text-4xl font-black leading-none tracking-[-0.05em] text-foreground sm:text-5xl md:text-6xl">
-                {itemData?.title}
-              </h1>
+              <div className="space-y-3">
+                <Badge
+                  variant="outline"
+                  className="rounded-full border-border bg-muted/40 px-4 py-2 text-[10px] font-black uppercase tracking-[0.25em]"
+                >
+                  <StatusIcon className="mr-2 h-3.5 w-3.5" />
+                  {content.pageLabel}
+                </Badge>
+
+                <h1 className="text-4xl font-black leading-none tracking-[-0.05em] text-foreground sm:text-5xl md:text-6xl">
+                  {itemData?.title}
+                </h1>
+              </div>
 
               <p className="max-w-2xl text-base leading-relaxed text-muted-foreground md:text-lg">
-                {itemData?.description}
+                {content.subtitle}
               </p>
             </div>
 
@@ -254,7 +296,7 @@ const ItemDetailPage = () => {
                     <Calendar className="h-4 w-4 text-primary" />
                   </div>
 
-                  {format(new Date(itemData.date), "MMM dd, yyyy")}
+                  {itemData?.date}
                 </div>
               </motion.div>
 
@@ -280,6 +322,33 @@ const ItemDetailPage = () => {
 
             <motion.div
               whileHover={{ y: -2 }}
+              className="overflow-hidden rounded-[2rem] border border-border bg-card/60 backdrop-blur-xl"
+            >
+              <CardContent className="space-y-5 p-6 md:p-8">
+                <div className="flex items-center gap-3">
+                  <div className="rounded-2xl bg-primary/10 p-3">
+                    <FileText className="h-5 w-5 text-primary" />
+                  </div>
+
+                  <div>
+                    <h3 className="text-sm font-black uppercase tracking-[0.25em] text-foreground">
+                      Item Description
+                    </h3>
+
+                    <p className="text-sm text-muted-foreground">
+                      Detailed information provided by the student
+                    </p>
+                  </div>
+                </div>
+
+                <p className="text-base leading-relaxed text-muted-foreground md:text-lg">
+                  {itemData?.description}
+                </p>
+              </CardContent>
+            </motion.div>
+
+            <motion.div
+              whileHover={{ y: -2 }}
               className="overflow-hidden rounded-[2rem] border border-primary/10 bg-card/60 backdrop-blur-xl"
             >
               <CardContent className="space-y-8 p-6 md:p-8">
@@ -290,20 +359,18 @@ const ItemDetailPage = () => {
 
                   <div className="space-y-2">
                     <p className="text-sm font-black uppercase tracking-[0.2em] text-foreground">
-                      Ownership Protocol
+                      {content.protocolTitle}
                     </p>
 
                     <p className="text-sm leading-relaxed text-muted-foreground">
-                      For security, specific identifying marks are withheld. You
-                      must describe the secret identifier set by the finder to
-                      initiate contact.
+                      {content.protocolDescription}
                     </p>
                   </div>
                 </div>
 
                 <Button className="h-14 w-full rounded-2xl text-xs font-black uppercase tracking-[0.3em] transition-all duration-300 hover:scale-[1.01] active:scale-[0.98]">
                   <Fingerprint className="mr-3 h-4 w-4" />
-                  Initiate Claim Access
+                  {userId === itemData?.user._id ? "Dashboard" :  content.cta}
                 </Button>
               </CardContent>
             </motion.div>
@@ -316,11 +383,11 @@ const ItemDetailPage = () => {
 
                 <div>
                   <h3 className="text-sm font-black uppercase tracking-[0.25em] text-foreground">
-                    Additional Details
+                    {content.detailsTitle}
                   </h3>
 
                   <p className="text-sm text-muted-foreground">
-                    Item verification information
+                    Live verification and status tracking
                   </p>
                 </div>
               </div>
@@ -330,13 +397,9 @@ const ItemDetailPage = () => {
                   <span className="text-sm text-muted-foreground">Status</span>
 
                   <Badge
-                    className={`rounded-full px-4 py-1.5 text-[10px] font-black uppercase tracking-[0.25em] ${
-                      itemData?.itemType === "lost"
-                        ? "bg-destructive text-destructive-foreground"
-                        : "bg-primary text-primary-foreground"
-                    }`}
+                    className={`rounded-full px-4 py-1.5 text-[10px] font-black uppercase tracking-[0.25em] ${content.statusStyle}`}
                   >
-                    {itemData?.itemType}
+                    {content.statusLabel}
                   </Badge>
                 </div>
 
@@ -352,7 +415,7 @@ const ItemDetailPage = () => {
 
                 <div className="flex items-center justify-between rounded-2xl border border-border bg-muted/40 px-4 py-4">
                   <span className="text-sm text-muted-foreground">
-                    Location
+                    {content.locationLabel}
                   </span>
 
                   <span className="text-right text-sm font-semibold text-foreground">
