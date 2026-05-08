@@ -25,8 +25,12 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Separator } from "@/components/ui/separator";
 import { useParams, useRouter } from "next/navigation";
-import { child, get, ref } from "firebase/database";
+import { child, get, getDatabase, ref, remove } from "firebase/database";
 import { database } from "@/app/lib/firebase";
+import { deleteImage } from "@/app/hooks/actions";
+import { toast } from "sonner";
+import { Spinner } from "@/components/ui/spinner";
+import { format } from "date-fns";
 
 type User = {
   _id: string;
@@ -45,6 +49,7 @@ type ItemProps = {
   description: string;
   itemType: "lost" | "found" | "approved" | "rejected";
   category: string;
+  imageId: string;
   date: string;
   location: string;
   image: string;
@@ -67,6 +72,7 @@ const ItemDetailPage = () => {
   const itemId = params.itemId;
   const userId = params.id;
   const [itemData, setItemData] = useState<ItemProps | null>(null);
+  const [loading, setLoading] = useState(false);
 
   const router = useRouter();
 
@@ -127,6 +133,33 @@ const ItemDetailPage = () => {
   }, [isLost]);
 
   const StatusIcon = content.icon;
+
+  const handleDeleteItem = async () => {
+    setLoading(true);
+    try {
+      const req = await deleteImage(userId as string, itemData?.imageId as string);
+      if (req.success) {
+        const db = getDatabase();
+        const recordDb = ref(db, `/items/${itemId}`);
+        remove(recordDb)
+          .then(() => {
+            toast.success("Item deleted successfully");
+            router.replace(`/browse/${userId}`);
+          })
+          .catch((error) => {
+            toast.error("Unable to delete item");
+            console.error(error)
+          });
+      } else {
+        toast.error(req.message);
+      }
+    } catch (error) {
+      console.error(error);
+    }
+    finally{
+      setLoading(false);
+    }
+  };
 
   return (
     <div className="relative min-h-screen overflow-hidden bg-background text-foreground">
@@ -296,7 +329,9 @@ const ItemDetailPage = () => {
                     <Calendar className="h-4 w-4 text-primary" />
                   </div>
 
-                  {itemData?.date}
+                  {itemData?.date && (
+                    format(new Date(itemData.date), "MMM dd, yyyy")
+                  )}
                 </div>
               </motion.div>
 
@@ -368,10 +403,28 @@ const ItemDetailPage = () => {
                   </div>
                 </div>
 
-                <Button className="h-14 w-full rounded-2xl text-xs font-black uppercase tracking-[0.3em] transition-all duration-300 hover:scale-[1.01] active:scale-[0.98]">
-                  <Fingerprint className="mr-3 h-4 w-4" />
-                  {userId === itemData?.user._id ? "Dashboard" :  content.cta}
-                </Button>
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.15 }}
+                  className="flex flex-col gap-3 sm:flex-row"
+                >
+                  <Button className="h-14 p-5 flex-1 rounded-2xl text-xs font-black uppercase tracking-[0.3em] transition-all duration-300 hover:scale-[1.01] active:scale-[0.98]">
+                    <Fingerprint className="mr-3 h-4 w-4" />
+                    {content.cta}
+                  </Button>
+
+                  {userId === itemData?.user._id && (
+                    <Button
+                      variant="outline"
+                      disabled={loading}
+                      onClick={handleDeleteItem}
+                      className="h-14 rounded-2xl border-destructive/20 bg-destructive/5 px-6 text-xs font-black uppercase tracking-[0.25em] text-destructive transition-all duration-300 hover:bg-destructive hover:text-destructive-foreground active:scale-[0.98]"
+                    >
+                      {loading ? <Spinner className="size-5"/> : "Delete Post"}
+                    </Button>
+                  )}
+                </motion.div>
               </CardContent>
             </motion.div>
 

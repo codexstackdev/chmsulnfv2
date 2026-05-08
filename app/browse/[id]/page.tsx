@@ -153,7 +153,7 @@ const UserProfile = ({ user }: { user: User | null }) => {
 
         <DropdownMenuSeparator className="my-1" />
 
-        <DropdownMenuItem className="gap-2 py-2.5 cursor-pointer focus:bg-accent rounded-lg">
+        <DropdownMenuItem onClick={() => router.push(`/dashboard/${user?._id}`)} className="gap-2 py-2.5 cursor-pointer focus:bg-accent rounded-lg">
           <LayoutDashboard className="h-4 w-4 text-muted-foreground" />
           <span className="text-sm font-medium">Dashboard</span>
         </DropdownMenuItem>
@@ -297,7 +297,7 @@ type ItemProps = {
   id: number;
   title: string;
   description: string;
-  itemType: "lost" | "found" | "approved" | "rejected";
+  itemType: "lost" | "found" | "pending" | "approved" | "rejected";
   category: string;
   date: string;
   location: string;

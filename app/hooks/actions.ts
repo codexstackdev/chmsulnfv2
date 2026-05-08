@@ -73,9 +73,9 @@ export const logout = async()=>{
   }
 }
 
-export const deleteImage = async(fileId:string)=>{
+export const deleteImage = async(userId:string, fileId:string)=>{
   try {
-    const req = await fetch(`/api/v1/auth/deleteImage?fileId=${fileId}`,{
+    const req = await fetch(`/api/v1/auth/deleteImage?userId=${userId}&fileId=${fileId}`,{
       method: "DELETE",
       headers,
     });

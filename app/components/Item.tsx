@@ -9,7 +9,7 @@ type ItemProps = {
   id: number;
   title: string;
   description: string;
-  itemType: "lost" | "found" | "approved" | "rejected";
+  itemType: "lost" | "found" | "pending" | "approved" | "rejected";
   category: string;
   date: string;
   location: string;
