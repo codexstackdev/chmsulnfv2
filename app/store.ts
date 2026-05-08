@@ -2,7 +2,7 @@ import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
 type User = {
-  _id:string;
+  _id: string;
   fullName: string;
   email: string;
   profile: string;
@@ -15,6 +15,7 @@ type User = {
 type UserData = {
   user: User | null;
   setUser: (user: User) => void;
+  updateUserPostedItem: (newPostedItems: string[]) => void;
   clearUser: () => void;
 };
 
@@ -22,13 +23,25 @@ export const useUser = create<UserData>()(
   persist(
     (set) => ({
       user: null,
+      
       setUser: (user) => set({ user }),
-      clearUser: () => set({ user: null }),
+
+      updateUserPostedItem: (newPostedItems) => 
+        set((state) => ({
+          user: state.user 
+            ? { ...state.user, postedItem: newPostedItems } 
+            : null
+        })),
+
+      clearUser: () => {
+        set({ user: null });
+        sessionStorage.removeItem("user-session");
+      },
     }),
     {
       name: "user-session",
       storage: createJSONStorage(() => sessionStorage),
       partialize: (state) => ({ user: state.user }),
-    },
-  ),
+    }
+  )
 );

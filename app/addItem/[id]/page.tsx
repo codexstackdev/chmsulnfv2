@@ -51,6 +51,7 @@ const AddItemPage = () => {
   const [category, setCategory] = useState("");
   const [description, setDescription] = useState("");
   const user = useUser((s) => s.user);
+  const updateUser = useUser((s) => s.updateUserPostedItem);
   const [progress, setProgress] = useState(0);
   const params = useParams();
   const id = params.id;
@@ -115,7 +116,7 @@ const AddItemPage = () => {
       !selectedLocation ||
       !description ||
       !itemType ||
-      !category
+      !category || !user
     ) {
       toast.error("Missing fields");
       return;
@@ -176,9 +177,11 @@ const AddItemPage = () => {
       if (newItem.key) {
         toast.success("Item uploaded successfully");
         await updatePostedItem(id as string, newItem.key);
+        const updatedItems = [...(user?.postedItem || []), newItem.key];
+        updateUser(updatedItems);
         router.back();
       } else {
-        await deleteImage(uploadResponse.fileId as string);
+        await deleteImage(user?._id as string, uploadResponse.fileId as string);
         toast.error("Something went wrong");
       }
     } catch (error) {
