@@ -136,3 +136,14 @@
     appearance: textfield;
   }
 }
+
+
+.customScroll{
+  @apply [&::-webkit-scrollbar]:w-0
+  [&::-webkit-scrollbar-track]:bg-stone-100
+  [&::-webkit-scrollbar-thumb]:bg-stone-300
+  [&::-webkit-scrollbar-thumb]:rounded-full
+  dark:[&::-webkit-scrollbar-track]:bg-neutral-700
+  dark:[&::-webkit-scrollbar-thumb]:bg-neutral-500
+  dark:[&::-webkit-scrollbar-thumb]:rounded-full
+}

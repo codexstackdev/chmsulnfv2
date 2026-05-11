@@ -31,6 +31,8 @@ import { deleteImage } from "@/app/hooks/actions";
 import { toast } from "sonner";
 import { Spinner } from "@/components/ui/spinner";
 import { format } from "date-fns";
+import FoundThisItemDialog from "@/app/components/FoundDialog";
+import ClaimItemDialog from "@/app/components/ClaimItemDialog";
 
 type User = {
   _id: string;
@@ -137,7 +139,10 @@ const ItemDetailPage = () => {
   const handleDeleteItem = async () => {
     setLoading(true);
     try {
-      const req = await deleteImage(userId as string, itemData?.imageId as string);
+      const req = await deleteImage(
+        userId as string,
+        itemData?.imageId as string,
+      );
       if (req.success) {
         const db = getDatabase();
         const recordDb = ref(db, `/items/${itemId}`);
@@ -148,18 +153,24 @@ const ItemDetailPage = () => {
           })
           .catch((error) => {
             toast.error("Unable to delete item");
-            console.error(error)
+            console.error(error);
           });
       } else {
         toast.error(req.message);
       }
     } catch (error) {
       console.error(error);
-    }
-    finally{
+    } finally {
       setLoading(false);
     }
   };
+
+  const ctaButton = (
+    <Button className="h-14 p-5 flex-1 rounded-2xl text-xs font-black uppercase tracking-[0.3em] transition-all duration-300 hover:scale-[1.01] active:scale-[0.98]">
+      <Fingerprint className="mr-3 h-4 w-4" />
+      {content.cta}
+    </Button>
+  );
 
   return (
     <div className="relative min-h-screen overflow-hidden bg-background text-foreground">
@@ -261,14 +272,11 @@ const ItemDetailPage = () => {
                       </h3>
 
                       <p className="truncate text-sm text-muted-foreground">
-                        #{itemData?.user.studentId} · {itemData?.user.role}
+                        #{itemData?.user.studentId} ·{" "}
+                        {itemData?.user.role &&
+                          itemData?.user.role.slice(0, 1).toUpperCase() +
+                            itemData?.user.role.slice(1)}
                       </p>
-
-                      {itemData?.user.postedItems && (
-                        <p className="text-sm text-muted-foreground">
-                          Contributions: {itemData?.user.postedItems.length}
-                        </p>
-                      )}
                     </div>
                   </div>
 
@@ -329,9 +337,8 @@ const ItemDetailPage = () => {
                     <Calendar className="h-4 w-4 text-primary" />
                   </div>
 
-                  {itemData?.date && (
-                    format(new Date(itemData.date), "MMM dd, yyyy")
-                  )}
+                  {itemData?.date &&
+                    format(new Date(itemData.date), "MMM dd, yyyy")}
                 </div>
               </motion.div>
 
@@ -409,10 +416,19 @@ const ItemDetailPage = () => {
                   transition={{ delay: 0.15 }}
                   className="flex flex-col gap-3 sm:flex-row"
                 >
-                  <Button className="h-14 p-5 flex-1 rounded-2xl text-xs font-black uppercase tracking-[0.3em] transition-all duration-300 hover:scale-[1.01] active:scale-[0.98]">
-                    <Fingerprint className="mr-3 h-4 w-4" />
-                    {content.cta}
-                  </Button>
+                  {isLost ? (
+                    <FoundThisItemDialog
+                      itemTitle={itemData?.title}
+                      itemId={itemData.id}
+                      trigger={ctaButton}
+                    />
+                  ) : (
+                    <ClaimItemDialog
+                      itemTitle={itemData?.title}
+                      itemId={itemData?.id}
+                      trigger={ctaButton}
+                    />
+                  )}
 
                   {userId === itemData?.user._id && (
                     <Button
@@ -421,7 +437,7 @@ const ItemDetailPage = () => {
                       onClick={handleDeleteItem}
                       className="h-14 rounded-2xl border-destructive/20 bg-destructive/5 px-6 text-xs font-black uppercase tracking-[0.25em] text-destructive transition-all duration-300 hover:bg-destructive hover:text-destructive-foreground active:scale-[0.98]"
                     >
-                      {loading ? <Spinner className="size-5"/> : "Delete Post"}
+                      {loading ? <Spinner className="size-5" /> : "Delete Post"}
                     </Button>
                   )}
                 </motion.div>

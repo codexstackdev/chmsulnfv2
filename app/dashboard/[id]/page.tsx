@@ -21,74 +21,79 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
+import { useEffect, useState } from "react";
+import { useParams, useRouter } from "next/navigation";
+import { equalTo, onValue, orderByChild, query, ref } from "firebase/database";
+import { database } from "@/app/lib/firebase";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 
-const postedItems = [
-  {
-    id: "1",
-    title: "Black Jansport Backpack",
-    category: "Bag",
-    location: "Main Library",
-    date: "May 8, 2026",
-    status: "active",
-    type: "found",
-    image:
-      "https://images.unsplash.com/photo-1542291026-7eec264c27ff?q=80&w=1200&auto=format&fit=crop",
-    requests: 4,
-  },
-  {
-    id: "2",
-    title: "Student ID Card",
-    category: "ID",
-    location: "Engineering Building",
-    date: "May 7, 2026",
-    status: "pending",
-    type: "lost",
-    image:
-      "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?q=80&w=1200&auto=format&fit=crop",
-    requests: 2,
-  },
-  {
-    id: "3",
-    title: "White AirPods Case",
-    category: "Electronics",
-    location: "Campus Cafeteria",
-    date: "May 5, 2026",
-    status: "approved",
-    type: "found",
-    image:
-      "https://images.unsplash.com/photo-1588423771073-b8903fbb85b5?q=80&w=1200&auto=format&fit=crop",
-    requests: 1,
-  },
-];
-
-const activities = [
-  {
-    id: 1,
-    type: "claim",
-    title: "New ownership claim submitted",
-    description:
-      "A student submitted proof for your found backpack listing.",
-    time: "2 mins ago",
-  },
-  {
-    id: 2,
-    type: "ping",
-    title: "Someone clicked 'I found this'",
-    description:
-      "A finder responded to your lost Student ID report.",
-    time: "15 mins ago",
-  },
-  {
-    id: 3,
-    type: "approved",
-    title: "Meetup approved by admin",
-    description:
-      "Your meetup request at the Main Lobby was approved.",
-    time: "1 hour ago",
-  },
-];
+type ItemProps = {
+  id: string;
+  title: string;
+  description: string;
+  itemType: "lost" | "found" | "pending" | "approved" | "rejected";
+  category: string;
+  date: string;
+  location: string;
+  image: string;
+  createdAt: string;
+};
 
 const page = () => {
+  const param = useParams();
+  const id = param.id;
+  const router = useRouter();
+  const [postedItems, setPostedItems] = useState<ItemProps[]>([]);
+  const [totalItem, setTotalItem] = useState(0);
+  const [selectedItemRequests, setSelectedItemRequests] = useState<any[]>([]);
+  const [loadingRequests, setLoadingRequests] = useState(false);
+  useEffect(() => {
+    if (!id) return;
+    const itemRef = ref(database, "items");
+    const userItems = query(
+      itemRef,
+      orderByChild("postedBy"),
+      equalTo(id as string),
+    );
+    const unsubscribe = onValue(userItems, (snapshot) => {
+      const data = snapshot.val();
+      if (data) {
+        const itemList = Object.entries(data).map(([key, value]) => ({
+          id: key,
+          ...(value as any),
+        }));
+        setPostedItems(itemList);
+        setTotalItem(itemList.length);
+      }
+    });
+
+    return () => unsubscribe();
+  }, [id]);
+
+  const fetchRequestsForItem = (itemId: string) => {
+    setLoadingRequests(true);
+    const requestsRef = ref(database, `request/${itemId}`);
+    onValue(requestsRef, (snapshot) => {
+      const data = snapshot.val();
+      if (data) {
+        const requestsList = Object.entries(data).map(([key, value]) => ({
+          id: key,
+          ...(value as any),
+        }));
+        setSelectedItemRequests(requestsList);
+      } else {
+        setSelectedItemRequests([]);
+      }
+      setLoadingRequests(false);
+    });
+  };
   return (
     <div className="relative min-h-screen overflow-hidden bg-background text-foreground">
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,hsla(var(--primary)/0.08),transparent_35%)]" />
@@ -130,7 +135,7 @@ const page = () => {
                   </span>
                 </div>
 
-                <h3 className="text-2xl font-black">12</h3>
+                <h3 className="text-2xl font-black">{totalItem}</h3>
               </CardContent>
             </Card>
 
@@ -144,7 +149,7 @@ const page = () => {
                   </span>
                 </div>
 
-                <h3 className="text-2xl font-black">7</h3>
+                <h3 className="text-2xl font-black">0</h3>
               </CardContent>
             </Card>
 
@@ -158,7 +163,7 @@ const page = () => {
                   </span>
                 </div>
 
-                <h3 className="text-2xl font-black">3</h3>
+                <h3 className="text-2xl font-black">0</h3>
               </CardContent>
             </Card>
 
@@ -172,7 +177,7 @@ const page = () => {
                   </span>
                 </div>
 
-                <h3 className="text-2xl font-black">5</h3>
+                <h3 className="text-2xl font-black">0</h3>
               </CardContent>
             </Card>
           </div>
@@ -195,18 +200,11 @@ const page = () => {
                   Manage all your lost and found listings
                 </p>
               </div>
-
-              <Button
-                variant="outline"
-                className="h-11 rounded-2xl border-border bg-card/60 px-5 text-[10px] font-black uppercase tracking-[0.25em] sm:h-12"
-              >
-                View Archive
-              </Button>
             </motion.div>
 
             <div className="space-y-4">
               {postedItems.map((item, index) => {
-                const isLost = item.type === "lost";
+                const isLost = item.itemType === "lost";
 
                 return (
                   <motion.div
@@ -222,7 +220,7 @@ const page = () => {
                             <img
                               src={item.image}
                               alt={item.title}
-                              className="h-full w-full object-cover"
+                              className="h-full w-full object-cover pointer-events-none"
                             />
 
                             <div className="absolute left-3 top-3 flex flex-wrap gap-2 sm:left-4 sm:top-4">
@@ -234,13 +232,6 @@ const page = () => {
                                 }`}
                               >
                                 {isLost ? "Lost" : "Found"}
-                              </Badge>
-
-                              <Badge
-                                variant="outline"
-                                className="rounded-full border-border bg-background/80 text-[10px] font-black uppercase tracking-[0.25em] backdrop-blur-xl"
-                              >
-                                {item.status}
                               </Badge>
                             </div>
                           </div>
@@ -286,10 +277,8 @@ const page = () => {
                                     </p>
 
                                     <p className="text-sm font-semibold">
-                                      {item.requests}{" "}
-                                      {isLost
-                                        ? "Ping Requests"
-                                        : "Claims"}
+                                      {item.itemType}{" "}
+                                      {isLost ? "Ping Requests" : "Claims"}
                                     </p>
                                   </div>
                                 </div>
@@ -345,26 +334,202 @@ const page = () => {
                             <Separator />
 
                             <div className="flex flex-col gap-3 sm:flex-row">
-                              <Button className="h-11 p-4 flex-1 rounded-2xl text-[10px] font-black uppercase tracking-[0.25em] sm:h-12">
+                              <Button
+                                onClick={() =>
+                                  router.push(`/browse/${id}/${item.id}`)
+                                }
+                                className="h-11 p-4 flex-1 rounded-2xl text-[10px] font-black uppercase tracking-[0.25em] sm:h-12"
+                              >
                                 <Eye className="mr-2 h-4 w-4" />
                                 Open Listing
                               </Button>
+                              <Dialog>
+                                <DialogTrigger asChild>
+                                  <Button
+                                    variant="outline"
+                                    onClick={() =>
+                                      fetchRequestsForItem(item.id)
+                                    }
+                                    className="h-11 rounded-2xl border-border bg-background/70 px-5 text-[10px] font-black uppercase tracking-[0.25em] sm:h-12"
+                                  >
+                                    <ArrowUpRight className="mr-2 h-4 w-4" />
+                                    View Requests
+                                  </Button>
+                                </DialogTrigger>
 
-                              <Button
-                                variant="outline"
-                                className="h-11 rounded-2xl border-border bg-background/70 px-5 text-[10px] font-black uppercase tracking-[0.25em] sm:h-12"
-                              >
-                                <ArrowUpRight className="mr-2 h-4 w-4" />
-                                View Requests
-                              </Button>
+                                <DialogContent className="rounded-[2rem] border-border bg-background sm:max-w-2xl max-h-[80vh] overflow-y-auto">
+                                  <DialogHeader className="space-y-3 text-left">
+                                    <DialogTitle className="text-2xl font-black tracking-[-0.04em]">
+                                      Claims for "{item.title}"
+                                    </DialogTitle>
+                                    <DialogDescription>
+                                      Review the details provided by students
+                                      claiming this item.
+                                    </DialogDescription>
+                                  </DialogHeader>
 
-                              <Button
-                                variant="outline"
-                                className="h-11 rounded-2xl border-destructive/20 bg-destructive/5 px-5 text-[10px] font-black uppercase tracking-[0.25em] text-destructive hover:bg-destructive hover:text-destructive-foreground sm:h-12"
-                              >
-                                <Trash2 className="mr-2 h-4 w-4" />
-                                Delete
-                              </Button>
+                                  <div className="space-y-4 mt-4">
+                                    {loadingRequests ? (
+                                      <p className="text-center py-10 text-muted-foreground">
+                                        Loading claims...
+                                      </p>
+                                    ) : selectedItemRequests.length > 0 ? (
+                                      selectedItemRequests.map((request) => (
+                                        <div
+                                          key={request.id}
+                                          className="rounded-[1.5rem] border border-border bg-card/60 p-5"
+                                        >
+                                          <div className="mb-4 flex items-center justify-between">
+                                            <div className="flex items-center gap-3">
+                                              <Avatar className="h-10 w-10 border border-border">
+                                                <AvatarImage
+                                                  src={request.claimerProfile}
+                                                />
+                                                <AvatarFallback>
+                                                  {request.claimerName?.charAt(
+                                                    0,
+                                                  )}
+                                                </AvatarFallback>
+                                              </Avatar>
+                                              <div>
+                                                <p className="text-sm font-bold">
+                                                  {request.claimerName}
+                                                </p>
+                                                <p className="text-xs text-muted-foreground">
+                                                  ID: {request.claimerStudentId}
+                                                </p>
+                                              </div>
+                                            </div>
+                                            <Badge className="bg-primary/20 text-primary border-none capitalize">
+                                              {request.status}
+                                            </Badge>
+                                          </div>
+
+                                          <div className="rounded-2xl border border-border bg-muted/40 p-4 space-y-3">
+                                            <div>
+                                              <p className="text-[10px] font-black uppercase tracking-[0.2em] text-primary">
+                                                Message
+                                              </p>
+                                              <p className="text-sm text-foreground mt-1 italic">
+                                                "{request.identifyingDetail}"
+                                              </p>
+                                              <Separator/>
+                                              {request.additionalInfo && (
+                                                <p className="text-sm text-foreground mt-1 italic">
+                                                Additional Information: "{request.additionalInfo}"
+                                              </p>
+                                              )}
+                                            </div>
+
+                                            <div className="grid grid-cols-2 gap-4">
+                                              <div>
+                                                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground">
+                                                  {item.itemType === "lost" ? "Location Found" : "Location Lost"}
+                                                </p>
+                                                <p className="text-sm font-medium">
+                                                  {request.eventLocation}
+                                                </p>
+                                              </div>
+                                              <div>
+                                                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground">
+                                                  {item.itemType === "lost" ? "Date Found" : "Date Lost"}
+                                                </p>
+                                                <p className="text-sm font-medium">
+                                                  {request.eventDate}
+                                                </p>
+                                              </div>
+                                            </div>
+
+                                            {request.proofImage && (
+                                              <div className="mt-2">
+                                                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground mb-2">
+                                                  Proof Image
+                                                </p>
+                                                <img
+                                                  src={request.proofImage}
+                                                  className="rounded-xl w-full max-h-40 object-cover border border-border"
+                                                  alt="Proof"
+                                                />
+                                              </div>
+                                            )}
+
+                                            <div className="flex gap-2 pt-2">
+                                              <Button className="flex-1 rounded-xl bg-primary text-[10px] font-black uppercase">
+                                                Accept
+                                              </Button>
+                                              <Button
+                                                variant="outline"
+                                                className="flex-1 rounded-xl text-[10px] font-black uppercase"
+                                              >
+                                                Reject
+                                              </Button>
+                                            </div>
+                                          </div>
+                                        </div>
+                                      ))
+                                    ) : (
+                                      <div className="text-center py-10 border-2 border-dashed border-border rounded-[1.5rem]">
+                                        <p className="text-muted-foreground">
+                                          No claims received yet for this item.
+                                        </p>
+                                      </div>
+                                    )}
+                                  </div>
+                                </DialogContent>
+                              </Dialog>
+
+                              <Dialog>
+                                <DialogTrigger asChild>
+                                  <Button
+                                    variant="outline"
+                                    className="h-11 rounded-2xl border-destructive/20 bg-destructive/5 px-5 text-[10px] font-black uppercase tracking-[0.25em] text-destructive hover:bg-destructive hover:text-destructive-foreground sm:h-12"
+                                  >
+                                    <Trash2 className="mr-2 h-4 w-4" />
+                                    Delete
+                                  </Button>
+                                </DialogTrigger>
+
+                                <DialogContent className="rounded-[2rem] border-border bg-background sm:max-w-md">
+                                  <DialogHeader className="space-y-3 text-left">
+                                    <DialogTitle className="text-2xl font-black tracking-[-0.04em]">
+                                      Delete Listing
+                                    </DialogTitle>
+
+                                    <DialogDescription className="leading-relaxed text-muted-foreground">
+                                      This modal should handle permanent
+                                      deletion and cleanup.
+                                    </DialogDescription>
+                                  </DialogHeader>
+
+                                  <div className="space-y-4">
+                                    <div className="rounded-2xl border border-destructive/10 bg-destructive/5 p-4">
+                                      <p className="text-xs font-black uppercase tracking-[0.2em] text-destructive">
+                                        Cleanup Flow
+                                      </p>
+
+                                      <div className="mt-4 space-y-2 text-sm text-muted-foreground">
+                                        <p>• Delete live item listing</p>
+                                        <p>• Remove active claims & pings</p>
+                                        <p>• Remove storage assets</p>
+                                        <p>• Create archive transaction log</p>
+                                      </div>
+                                    </div>
+
+                                    <div className="flex flex-col gap-3 sm:flex-row">
+                                      <Button
+                                        variant="outline"
+                                        className="h-11 flex-1 rounded-2xl text-[10px] font-black uppercase tracking-[0.25em]"
+                                      >
+                                        Cancel
+                                      </Button>
+
+                                      <Button className="h-11 flex-1 rounded-2xl bg-destructive text-[10px] font-black uppercase tracking-[0.25em] text-destructive-foreground hover:bg-destructive/90">
+                                        Confirm Delete
+                                      </Button>
+                                    </div>
+                                  </div>
+                                </DialogContent>
+                              </Dialog>
                             </div>
                           </div>
                         </div>
@@ -392,7 +557,7 @@ const page = () => {
               </p>
             </motion.div>
 
-            <Card className="rounded-[1.75rem] border-border bg-card/60 backdrop-blur-xl lg:rounded-[2rem]">
+            {/* <Card className="rounded-[1.75rem] border-border bg-card/60 backdrop-blur-xl lg:rounded-[2rem]">
               <CardContent className="space-y-4 p-4 sm:p-5 md:p-6">
                 {activities.map((activity, index) => (
                   <div key={activity.id}>
@@ -434,7 +599,7 @@ const page = () => {
                   </div>
                 ))}
               </CardContent>
-            </Card>
+            </Card> */}
 
             <Card className="overflow-hidden rounded-[1.75rem] border-primary/10 bg-card/60 backdrop-blur-xl lg:rounded-[2rem]">
               <CardContent className="space-y-4 p-4 sm:p-5 md:p-6">

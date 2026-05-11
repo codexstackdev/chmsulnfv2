@@ -159,7 +159,8 @@ const AddItemPage = () => {
         imageId: uploadResponse.fileId,
         location,
         itemType,
-        user
+        user,
+        postedBy: user._id
       };
       await set(newItem, finalItem);
       const emptyField = {
@@ -176,9 +177,6 @@ const AddItemPage = () => {
       setItemData(emptyField);
       if (newItem.key) {
         toast.success("Item uploaded successfully");
-        await updatePostedItem(id as string, newItem.key);
-        const updatedItems = [...(user?.postedItem || []), newItem.key];
-        updateUser(updatedItems);
         router.back();
       } else {
         await deleteImage(user?._id as string, uploadResponse.fileId as string);
