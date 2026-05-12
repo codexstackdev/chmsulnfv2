@@ -36,10 +36,15 @@ const FoundThisItemDialog = ({
   const [proofPreview, setProofPreview] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [open, setOpen] = useState(false);
+  const today = new Date();
+  const year = today.getFullYear();
+  const month = String(today.getMonth() + 1).padStart(2, "0");
+  const day = String(today.getDate()).padStart(2, "0");
+  const maxDate = `${year}-${month}-${day}`;
 
   const [form, setForm] = useState({
-    foundLocation: "",
-    foundDate: "",
+    eventLocation: "",
+    eventDate: "",
     message: "",
     contactNumber: "",
   });
@@ -53,7 +58,7 @@ const FoundThisItemDialog = ({
   };
 
   const handleSubmit = async () => {
-    if (!form.foundLocation || !form.foundDate || !form.contactNumber) {
+    if (!form.eventLocation || !form.eventDate || !form.contactNumber) {
       toast.error("Please fill in all required fields.");
       return;
     }
@@ -63,8 +68,8 @@ const FoundThisItemDialog = ({
     setSubmitting(false);
     setOpen(false);
     setForm({
-      foundLocation: "",
-      foundDate: "",
+      eventLocation: "",
+      eventDate: "",
       message: "",
       contactNumber: "",
     });
@@ -111,9 +116,9 @@ const FoundThisItemDialog = ({
               <Input
                 placeholder="e.g. Library 2nd floor, near the study area"
                 className="h-12 rounded-2xl border-border bg-muted/40 pl-10 text-sm focus-visible:ring-primary"
-                value={form.foundLocation}
+                value={form.eventLocation}
                 onChange={(e) =>
-                  setForm((f) => ({ ...f, foundLocation: e.target.value }))
+                  setForm((f) => ({ ...f, eventLocation: e.target.value }))
                 }
               />
             </div>
@@ -127,10 +132,11 @@ const FoundThisItemDialog = ({
               <Calendar className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 type="date"
+                max={maxDate}
                 className="h-12 rounded-2xl border-border bg-muted/40 pl-10 text-sm focus-visible:ring-primary"
-                value={form.foundDate}
+                value={form.eventDate}
                 onChange={(e) =>
-                  setForm((f) => ({ ...f, foundDate: e.target.value }))
+                  setForm((f) => ({ ...f, eventDate: e.target.value }))
                 }
               />
             </div>

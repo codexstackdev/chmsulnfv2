@@ -15,6 +15,7 @@ import {
   Search,
   PackageSearch,
   FileText,
+  CheckCircle2,
 } from "lucide-react";
 
 import { motion } from "framer-motion";
@@ -33,6 +34,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { format } from "date-fns";
 import FoundThisItemDialog from "@/app/components/FoundDialog";
 import ClaimItemDialog from "@/app/components/ClaimItemDialog";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 type User = {
   _id: string;
@@ -49,7 +51,7 @@ type ItemProps = {
   id: string;
   title: string;
   description: string;
-  itemType: "lost" | "found" | "approved" | "rejected";
+  itemType: "lost" | "found" | "approved" | "rejected" | "recovered";
   category: string;
   imageId: string;
   date: string;
@@ -416,7 +418,18 @@ const ItemDetailPage = () => {
                   transition={{ delay: 0.15 }}
                   className="flex flex-col gap-3 sm:flex-row"
                 >
-                  {isLost ? (
+                  {itemData?.itemType === "recovered" ? (
+                    <Alert className="bg-green-50 border-green-200">
+                      <CheckCircle2 className="h-4 w-4 stroke-green-600" />
+                      <AlertTitle className="text-green-800 font-semibold">
+                        Item Successfully Recovered
+                      </AlertTitle>
+                      <AlertDescription className="text-green-700">
+                        Great news! This item has been returned to its owner.
+                        The claim process is now complete.
+                      </AlertDescription>
+                    </Alert>
+                  ) : isLost ? (
                     <FoundThisItemDialog
                       itemTitle={itemData?.title}
                       itemId={itemData.id}

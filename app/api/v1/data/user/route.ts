@@ -21,7 +21,7 @@ export async function GET(req: NextRequest) {
         { status: 400 },
       );
     await connectDB();
-    const user = await userModel.findById(id).select("-password");
+    const user = await userModel.findById(id).select("-password -recoveryKey");
     return NextResponse.json({ success: true, user });
   } catch (error) {
     const err = error instanceof Error ? error.message : "Server Unreachable";

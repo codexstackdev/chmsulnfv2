@@ -21,9 +21,18 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { equalTo, onValue, orderByChild, query, ref } from "firebase/database";
+import {
+  equalTo,
+  getDatabase,
+  onValue,
+  orderByChild,
+  query,
+  ref,
+  remove,
+  update,
+} from "firebase/database";
 import { database } from "@/app/lib/firebase";
 import {
   Dialog,
@@ -33,17 +42,37 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { useUser } from "@/app/store";
+import { toast } from "sonner";
+import { deleteImage } from "@/app/hooks/actions";
 
 type ItemProps = {
   id: string;
   title: string;
   description: string;
-  itemType: "lost" | "found" | "pending" | "approved" | "rejected";
+  itemType: "lost" | "found" | "pending" | "approved" | "rejected" | "resolved";
   category: string;
   date: string;
   location: string;
   image: string;
+  imageId: string;
   createdAt: string;
+};
+
+type RequestProps = {
+  id: string;
+  additionalInfo: string;
+  claimerName: string;
+  claimerProfile: string;
+  claimerStudentId: number;
+  contactNumber: number;
+  createdAt: number;
+  eventLocation: string;
+  eventDate: string;
+  identifyingDetail: string;
+  requestedBt: string;
+  status: "approved" | "pending" | "rejected";
+  proof?: string;
 };
 
 const page = () => {
@@ -52,8 +81,22 @@ const page = () => {
   const router = useRouter();
   const [postedItems, setPostedItems] = useState<ItemProps[]>([]);
   const [totalItem, setTotalItem] = useState(0);
-  const [selectedItemRequests, setSelectedItemRequests] = useState<any[]>([]);
+  const [selectedItemRequests, setSelectedItemRequests] = useState<
+    RequestProps[]
+  >([]);
   const [loadingRequests, setLoadingRequests] = useState(false);
+  const requestCount = useUser((s) => s.requestCount);
+  const pendingCount = useUser((s) => s.pendingCount);
+  const closedCount = useUser((s) => s.closedCount);
+
+  useEffect(() => {
+    const subscribe = useUser.getState().subscribeToRequests;
+    const unsubscribe = useUser.getState().unsubscribeFromRequests;
+
+    subscribe();
+    return () => unsubscribe();
+  }, []);
+
   useEffect(() => {
     if (!id) return;
     const itemRef = ref(database, "items");
@@ -94,6 +137,48 @@ const page = () => {
       setLoadingRequests(false);
     });
   };
+
+  const handleAcceptRequest = async (itemId: string, requestId: string) => {
+    try {
+      const updates: any = {};
+      updates[`request/${itemId}/${requestId}/status`] = "approved";
+      updates[`items/${itemId}/itemType`] = "recovered";
+
+      await update(ref(database), updates);
+      toast.success("Request approved! Coordinate the meetup next.");
+    } catch (error) {
+      console.error("Error accepting request:", error);
+    }
+  };
+
+  const handleDeleteItem = async (imageId:string, itemId:string) => {
+  try {
+    const imgRes = await deleteImage(
+      id as string,
+      imageId,
+    );
+
+    if (imgRes.success) {
+      const db = getDatabase();
+      
+      const itemRef = ref(db, `/items/${itemId}`);
+      const requestsRef = ref(db, `/requests/${itemId}`);
+
+      await Promise.all([
+        remove(itemRef),
+        remove(requestsRef)
+      ]);
+
+      toast.success("Item and associated requests deleted successfully");
+    } else {
+      toast.error(imgRes.message);
+    }
+  } catch (error) {
+    toast.error("Unable to delete item or requests");
+    console.error("Delete Error:", error);
+  }
+};
+
   return (
     <div className="relative min-h-screen overflow-hidden bg-background text-foreground">
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,hsla(var(--primary)/0.08),transparent_35%)]" />
@@ -149,7 +234,7 @@ const page = () => {
                   </span>
                 </div>
 
-                <h3 className="text-2xl font-black">0</h3>
+                <h3 className="text-2xl font-black">{requestCount}</h3>
               </CardContent>
             </Card>
 
@@ -163,7 +248,7 @@ const page = () => {
                   </span>
                 </div>
 
-                <h3 className="text-2xl font-black">0</h3>
+                <h3 className="text-2xl font-black">{pendingCount}</h3>
               </CardContent>
             </Card>
 
@@ -177,7 +262,7 @@ const page = () => {
                   </span>
                 </div>
 
-                <h3 className="text-2xl font-black">0</h3>
+                <h3 className="text-2xl font-black">{closedCount}</h3>
               </CardContent>
             </Card>
           </div>
@@ -203,341 +288,365 @@ const page = () => {
             </motion.div>
 
             <div className="space-y-4">
-              {postedItems.map((item, index) => {
-                const isLost = item.itemType === "lost";
+              {postedItems
+                .sort((a, b) => {
+                  if (b.createdAt > a.createdAt) return 1;
+                  if (b.createdAt < a.createdAt) return -1;
+                  return 0;
+                })
+                .map((item, index) => {
+                  const isLost = item.itemType === "lost";
 
-                return (
-                  <motion.div
-                    key={item.id}
-                    initial={{ opacity: 0, y: 24 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: index * 0.08 }}
-                  >
-                    <Card className="overflow-hidden rounded-[1.75rem] border-border bg-card/60 backdrop-blur-xl transition-all duration-300 hover:bg-card lg:rounded-[2rem]">
-                      <CardContent className="p-3 sm:p-4 md:p-5 lg:p-6">
-                        <div className="flex flex-col gap-5 lg:flex-row">
-                          <div className="relative h-48 w-full overflow-hidden rounded-[1.25rem] border border-border sm:h-56 lg:h-auto lg:w-60 xl:w-65">
-                            <img
-                              src={item.image}
-                              alt={item.title}
-                              className="h-full w-full object-cover pointer-events-none"
-                            />
+                  return (
+                    <motion.div
+                      key={item.id}
+                      initial={{ opacity: 0, y: 24 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: index * 0.08 }}
+                    >
+                      <Card className="overflow-hidden rounded-[1.75rem] border-border bg-card/60 backdrop-blur-xl transition-all duration-300 hover:bg-card lg:rounded-[2rem]">
+                        <CardContent className="p-3 sm:p-4 md:p-5 lg:p-6">
+                          <div className="flex flex-col gap-5 lg:flex-row">
+                            <div className="relative h-48 w-full overflow-hidden rounded-[1.25rem] border border-border sm:h-56 lg:h-auto lg:w-60 xl:w-65">
+                              <img
+                                src={item.image}
+                                alt={item.title}
+                                className="h-full w-full object-cover pointer-events-none"
+                              />
 
-                            <div className="absolute left-3 top-3 flex flex-wrap gap-2 sm:left-4 sm:top-4">
-                              <Badge
-                                className={`rounded-full px-4 py-1.5 text-[10px] font-black uppercase tracking-[0.25em] ${
-                                  isLost
-                                    ? "bg-destructive text-destructive-foreground"
-                                    : "bg-primary text-primary-foreground"
-                                }`}
-                              >
-                                {isLost ? "Lost" : "Found"}
-                              </Badge>
-                            </div>
-                          </div>
-
-                          <div className="flex flex-1 flex-col justify-between gap-5">
-                            <div className="space-y-5">
-                              <div className="flex flex-col gap-4">
-                                <div className="space-y-3">
-                                  <div className="flex flex-wrap items-center gap-2">
-                                    <Badge
-                                      variant="outline"
-                                      className="rounded-full border-border bg-muted/40 px-4 py-1.5 text-[10px] font-black uppercase tracking-[0.25em]"
-                                    >
-                                      {item.category}
-                                    </Badge>
-
-                                    <Badge
-                                      variant="outline"
-                                      className="rounded-full border-border bg-muted/40 px-4 py-1.5 text-[10px] font-black uppercase tracking-[0.25em]"
-                                    >
-                                      <MapPin className="mr-2 h-3 w-3" />
-                                      {item.location}
-                                    </Badge>
-                                  </div>
-
-                                  <div className="space-y-2">
-                                    <h3 className="text-xl font-black leading-tight tracking-[-0.03em] sm:text-2xl">
-                                      {item.title}
-                                    </h3>
-
-                                    <p className="text-sm text-muted-foreground">
-                                      Posted on {item.date}
-                                    </p>
-                                  </div>
-                                </div>
-
-                                <div className="flex w-full items-center gap-2 rounded-2xl border border-border bg-background/70 px-4 py-3 sm:w-fit">
-                                  <BellRing className="h-4 w-4 text-primary" />
-
-                                  <div>
-                                    <p className="text-xs font-bold uppercase tracking-[0.2em] text-muted-foreground">
-                                      Activity
-                                    </p>
-
-                                    <p className="text-sm font-semibold">
-                                      {item.itemType}{" "}
-                                      {isLost ? "Ping Requests" : "Claims"}
-                                    </p>
-                                  </div>
-                                </div>
-                              </div>
-
-                              <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-                                <div className="rounded-2xl border border-border bg-background/60 p-4">
-                                  <div className="mb-3 flex items-center gap-2">
-                                    <ShieldCheck className="h-4 w-4 text-primary" />
-
-                                    <span className="text-[10px] font-black uppercase tracking-[0.25em] text-muted-foreground">
-                                      Verification
-                                    </span>
-                                  </div>
-
-                                  <p className="text-sm font-medium leading-relaxed text-muted-foreground">
-                                    {isLost
-                                      ? "Waiting for a finder to submit proof."
-                                      : "Ownership verification enabled."}
-                                  </p>
-                                </div>
-
-                                <div className="rounded-2xl border border-border bg-background/60 p-4">
-                                  <div className="mb-3 flex items-center gap-2">
-                                    <Fingerprint className="h-4 w-4 text-primary" />
-
-                                    <span className="text-[10px] font-black uppercase tracking-[0.25em] text-muted-foreground">
-                                      Security
-                                    </span>
-                                  </div>
-
-                                  <p className="text-sm font-medium leading-relaxed text-muted-foreground">
-                                    Hidden identifying details protected.
-                                  </p>
-                                </div>
-
-                                <div className="rounded-2xl border border-border bg-background/60 p-4">
-                                  <div className="mb-3 flex items-center gap-2">
-                                    <UserCheck className="h-4 w-4 text-primary" />
-
-                                    <span className="text-[10px] font-black uppercase tracking-[0.25em] text-muted-foreground">
-                                      Admin
-                                    </span>
-                                  </div>
-
-                                  <p className="text-sm font-medium leading-relaxed text-muted-foreground">
-                                    Campus meetup approval required.
-                                  </p>
-                                </div>
+                              <div className="absolute left-3 top-3 flex flex-wrap gap-2 sm:left-4 sm:top-4">
+                                <Badge
+                                  className={`rounded-full px-4 py-1.5 text-[10px] font-black uppercase tracking-[0.25em] ${
+                                    isLost
+                                      ? "bg-destructive text-destructive-foreground"
+                                      : "bg-primary text-primary-foreground"
+                                  }`}
+                                >
+                                  {isLost ? "Lost" : "Found"}
+                                </Badge>
                               </div>
                             </div>
 
-                            <Separator />
-
-                            <div className="flex flex-col gap-3 sm:flex-row">
-                              <Button
-                                onClick={() =>
-                                  router.push(`/browse/${id}/${item.id}`)
-                                }
-                                className="h-11 p-4 flex-1 rounded-2xl text-[10px] font-black uppercase tracking-[0.25em] sm:h-12"
-                              >
-                                <Eye className="mr-2 h-4 w-4" />
-                                Open Listing
-                              </Button>
-                              <Dialog>
-                                <DialogTrigger asChild>
-                                  <Button
-                                    variant="outline"
-                                    onClick={() =>
-                                      fetchRequestsForItem(item.id)
-                                    }
-                                    className="h-11 rounded-2xl border-border bg-background/70 px-5 text-[10px] font-black uppercase tracking-[0.25em] sm:h-12"
-                                  >
-                                    <ArrowUpRight className="mr-2 h-4 w-4" />
-                                    View Requests
-                                  </Button>
-                                </DialogTrigger>
-
-                                <DialogContent className="rounded-[2rem] border-border bg-background sm:max-w-2xl max-h-[80vh] overflow-y-auto">
-                                  <DialogHeader className="space-y-3 text-left">
-                                    <DialogTitle className="text-2xl font-black tracking-[-0.04em]">
-                                      Claims for "{item.title}"
-                                    </DialogTitle>
-                                    <DialogDescription>
-                                      Review the details provided by students
-                                      claiming this item.
-                                    </DialogDescription>
-                                  </DialogHeader>
-
-                                  <div className="space-y-4 mt-4">
-                                    {loadingRequests ? (
-                                      <p className="text-center py-10 text-muted-foreground">
-                                        Loading claims...
-                                      </p>
-                                    ) : selectedItemRequests.length > 0 ? (
-                                      selectedItemRequests.map((request) => (
-                                        <div
-                                          key={request.id}
-                                          className="rounded-[1.5rem] border border-border bg-card/60 p-5"
-                                        >
-                                          <div className="mb-4 flex items-center justify-between">
-                                            <div className="flex items-center gap-3">
-                                              <Avatar className="h-10 w-10 border border-border">
-                                                <AvatarImage
-                                                  src={request.claimerProfile}
-                                                />
-                                                <AvatarFallback>
-                                                  {request.claimerName?.charAt(
-                                                    0,
-                                                  )}
-                                                </AvatarFallback>
-                                              </Avatar>
-                                              <div>
-                                                <p className="text-sm font-bold">
-                                                  {request.claimerName}
-                                                </p>
-                                                <p className="text-xs text-muted-foreground">
-                                                  ID: {request.claimerStudentId}
-                                                </p>
-                                              </div>
-                                            </div>
-                                            <Badge className="bg-primary/20 text-primary border-none capitalize">
-                                              {request.status}
-                                            </Badge>
-                                          </div>
-
-                                          <div className="rounded-2xl border border-border bg-muted/40 p-4 space-y-3">
-                                            <div>
-                                              <p className="text-[10px] font-black uppercase tracking-[0.2em] text-primary">
-                                                Message
-                                              </p>
-                                              <p className="text-sm text-foreground mt-1 italic">
-                                                "{request.identifyingDetail}"
-                                              </p>
-                                              <Separator/>
-                                              {request.additionalInfo && (
-                                                <p className="text-sm text-foreground mt-1 italic">
-                                                Additional Information: "{request.additionalInfo}"
-                                              </p>
-                                              )}
-                                            </div>
-
-                                            <div className="grid grid-cols-2 gap-4">
-                                              <div>
-                                                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground">
-                                                  {item.itemType === "lost" ? "Location Found" : "Location Lost"}
-                                                </p>
-                                                <p className="text-sm font-medium">
-                                                  {request.eventLocation}
-                                                </p>
-                                              </div>
-                                              <div>
-                                                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground">
-                                                  {item.itemType === "lost" ? "Date Found" : "Date Lost"}
-                                                </p>
-                                                <p className="text-sm font-medium">
-                                                  {request.eventDate}
-                                                </p>
-                                              </div>
-                                            </div>
-
-                                            {request.proofImage && (
-                                              <div className="mt-2">
-                                                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground mb-2">
-                                                  Proof Image
-                                                </p>
-                                                <img
-                                                  src={request.proofImage}
-                                                  className="rounded-xl w-full max-h-40 object-cover border border-border"
-                                                  alt="Proof"
-                                                />
-                                              </div>
-                                            )}
-
-                                            <div className="flex gap-2 pt-2">
-                                              <Button className="flex-1 rounded-xl bg-primary text-[10px] font-black uppercase">
-                                                Accept
-                                              </Button>
-                                              <Button
-                                                variant="outline"
-                                                className="flex-1 rounded-xl text-[10px] font-black uppercase"
-                                              >
-                                                Reject
-                                              </Button>
-                                            </div>
-                                          </div>
-                                        </div>
-                                      ))
-                                    ) : (
-                                      <div className="text-center py-10 border-2 border-dashed border-border rounded-[1.5rem]">
-                                        <p className="text-muted-foreground">
-                                          No claims received yet for this item.
-                                        </p>
-                                      </div>
-                                    )}
-                                  </div>
-                                </DialogContent>
-                              </Dialog>
-
-                              <Dialog>
-                                <DialogTrigger asChild>
-                                  <Button
-                                    variant="outline"
-                                    className="h-11 rounded-2xl border-destructive/20 bg-destructive/5 px-5 text-[10px] font-black uppercase tracking-[0.25em] text-destructive hover:bg-destructive hover:text-destructive-foreground sm:h-12"
-                                  >
-                                    <Trash2 className="mr-2 h-4 w-4" />
-                                    Delete
-                                  </Button>
-                                </DialogTrigger>
-
-                                <DialogContent className="rounded-[2rem] border-border bg-background sm:max-w-md">
-                                  <DialogHeader className="space-y-3 text-left">
-                                    <DialogTitle className="text-2xl font-black tracking-[-0.04em]">
-                                      Delete Listing
-                                    </DialogTitle>
-
-                                    <DialogDescription className="leading-relaxed text-muted-foreground">
-                                      This modal should handle permanent
-                                      deletion and cleanup.
-                                    </DialogDescription>
-                                  </DialogHeader>
-
-                                  <div className="space-y-4">
-                                    <div className="rounded-2xl border border-destructive/10 bg-destructive/5 p-4">
-                                      <p className="text-xs font-black uppercase tracking-[0.2em] text-destructive">
-                                        Cleanup Flow
-                                      </p>
-
-                                      <div className="mt-4 space-y-2 text-sm text-muted-foreground">
-                                        <p>• Delete live item listing</p>
-                                        <p>• Remove active claims & pings</p>
-                                        <p>• Remove storage assets</p>
-                                        <p>• Create archive transaction log</p>
-                                      </div>
-                                    </div>
-
-                                    <div className="flex flex-col gap-3 sm:flex-row">
-                                      <Button
+                            <div className="flex flex-1 flex-col justify-between gap-5">
+                              <div className="space-y-5">
+                                <div className="flex flex-col gap-4">
+                                  <div className="space-y-3">
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      <Badge
                                         variant="outline"
-                                        className="h-11 flex-1 rounded-2xl text-[10px] font-black uppercase tracking-[0.25em]"
+                                        className="rounded-full border-border bg-muted/40 px-4 py-1.5 text-[10px] font-black uppercase tracking-[0.25em]"
                                       >
-                                        Cancel
-                                      </Button>
+                                        {item.category}
+                                      </Badge>
 
-                                      <Button className="h-11 flex-1 rounded-2xl bg-destructive text-[10px] font-black uppercase tracking-[0.25em] text-destructive-foreground hover:bg-destructive/90">
-                                        Confirm Delete
-                                      </Button>
+                                      <Badge
+                                        variant="outline"
+                                        className="rounded-full border-border bg-muted/40 px-4 py-1.5 text-[10px] font-black uppercase tracking-[0.25em]"
+                                      >
+                                        <MapPin className="mr-2 h-3 w-3" />
+                                        {item.location}
+                                      </Badge>
+                                    </div>
+
+                                    <div className="space-y-2">
+                                      <h3 className="text-xl font-black leading-tight tracking-[-0.03em] sm:text-2xl">
+                                        {item.title}
+                                      </h3>
+
+                                      <p className="text-sm text-muted-foreground">
+                                        Posted on {item.date}
+                                      </p>
                                     </div>
                                   </div>
-                                </DialogContent>
-                              </Dialog>
+
+                                  <div className="flex w-full items-center gap-2 rounded-2xl border border-border bg-background/70 px-4 py-3 sm:w-fit">
+                                    <BellRing className="h-4 w-4 text-primary" />
+
+                                    <div>
+                                      <p className="text-xs font-bold uppercase tracking-[0.2em] text-muted-foreground">
+                                        Activity
+                                      </p>
+
+                                      <p className="text-sm font-semibold">
+                                        {item.itemType}{" "}
+                                        {isLost ? "Ping Requests" : "Claims"}
+                                      </p>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                                  <div className="rounded-2xl border border-border bg-background/60 p-4">
+                                    <div className="mb-3 flex items-center gap-2">
+                                      <ShieldCheck className="h-4 w-4 text-primary" />
+
+                                      <span className="text-[10px] font-black uppercase tracking-[0.25em] text-muted-foreground">
+                                        Verification
+                                      </span>
+                                    </div>
+
+                                    <p className="text-sm font-medium leading-relaxed text-muted-foreground">
+                                      {isLost
+                                        ? "Waiting for a finder to submit proof."
+                                        : "Ownership verification enabled."}
+                                    </p>
+                                  </div>
+
+                                  <div className="rounded-2xl border border-border bg-background/60 p-4">
+                                    <div className="mb-3 flex items-center gap-2">
+                                      <Fingerprint className="h-4 w-4 text-primary" />
+
+                                      <span className="text-[10px] font-black uppercase tracking-[0.25em] text-muted-foreground">
+                                        Security
+                                      </span>
+                                    </div>
+
+                                    <p className="text-sm font-medium leading-relaxed text-muted-foreground">
+                                      Hidden identifying details protected.
+                                    </p>
+                                  </div>
+
+                                  <div className="rounded-2xl border border-border bg-background/60 p-4">
+                                    <div className="mb-3 flex items-center gap-2">
+                                      <UserCheck className="h-4 w-4 text-primary" />
+
+                                      <span className="text-[10px] font-black uppercase tracking-[0.25em] text-muted-foreground">
+                                        Admin
+                                      </span>
+                                    </div>
+
+                                    <p className="text-sm font-medium leading-relaxed text-muted-foreground">
+                                      Campus meetup approval required.
+                                    </p>
+                                  </div>
+                                </div>
+                              </div>
+
+                              <Separator />
+
+                              <div className="flex flex-col gap-3 sm:flex-row">
+                                <Button
+                                  onClick={() =>
+                                    router.push(`/browse/${id}/${item.id}`)
+                                  }
+                                  className="h-11 p-4 flex-1 rounded-2xl text-[10px] font-black uppercase tracking-[0.25em] sm:h-12"
+                                >
+                                  <Eye className="mr-2 h-4 w-4" />
+                                  Open Listing
+                                </Button>
+                                <Dialog>
+                                  <DialogTrigger asChild>
+                                    <Button
+                                      variant="outline"
+                                      onClick={() =>
+                                        fetchRequestsForItem(item.id)
+                                      }
+                                      className="h-11 rounded-2xl border-border bg-background/70 px-5 text-[10px] font-black uppercase tracking-[0.25em] sm:h-12"
+                                    >
+                                      <ArrowUpRight className="mr-2 h-4 w-4" />
+                                      View Requests
+                                    </Button>
+                                  </DialogTrigger>
+
+                                  <DialogContent className="rounded-[2rem] border-border bg-background sm:max-w-2xl max-h-[80vh] overflow-y-auto">
+                                    <DialogHeader className="space-y-3 text-left">
+                                      <DialogTitle className="text-2xl font-black tracking-[-0.04em]">
+                                        Claims for "{item.title}"
+                                      </DialogTitle>
+                                      <DialogDescription>
+                                        Review the details provided by students
+                                        claiming this item.
+                                      </DialogDescription>
+                                    </DialogHeader>
+
+                                    <div className="space-y-4 mt-4">
+                                      {loadingRequests ? (
+                                        <p className="text-center py-10 text-muted-foreground">
+                                          Loading claims...
+                                        </p>
+                                      ) : selectedItemRequests.length > 0 ? (
+                                        selectedItemRequests.map((request) => (
+                                          <div
+                                            key={request.id}
+                                            className="rounded-[1.5rem] border border-border bg-card/60 p-5"
+                                          >
+                                            <div className="mb-4 flex items-center justify-between">
+                                              <div className="flex items-center gap-3">
+                                                <Avatar className="h-10 w-10 border border-border">
+                                                  <AvatarImage
+                                                    src={request.claimerProfile}
+                                                  />
+                                                  <AvatarFallback>
+                                                    {request.claimerName?.charAt(
+                                                      0,
+                                                    )}
+                                                  </AvatarFallback>
+                                                </Avatar>
+                                                <div>
+                                                  <p className="text-sm font-bold">
+                                                    {request.claimerName}
+                                                  </p>
+                                                  <p className="text-xs text-muted-foreground">
+                                                    ID:{" "}
+                                                    {request.claimerStudentId}
+                                                  </p>
+                                                </div>
+                                              </div>
+                                              <Badge className="bg-primary/20 text-primary border-none capitalize">
+                                                {request.status}
+                                              </Badge>
+                                            </div>
+
+                                            <div className="rounded-2xl border border-border bg-muted/40 p-4 space-y-3">
+                                              <div>
+                                                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-primary">
+                                                  Message
+                                                </p>
+                                                <p className="text-sm text-foreground mt-1 italic">
+                                                  "{request.identifyingDetail}"
+                                                </p>
+                                                <Separator />
+                                                {request.additionalInfo && (
+                                                  <p className="text-sm text-foreground mt-1 italic">
+                                                    Additional Information: "
+                                                    {request.additionalInfo}"
+                                                  </p>
+                                                )}
+                                              </div>
+
+                                              <div className="grid grid-cols-2 gap-4">
+                                                <div>
+                                                  <p className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground">
+                                                    {item.itemType === "lost"
+                                                      ? "Location Found"
+                                                      : "Location Lost"}
+                                                  </p>
+                                                  <p className="text-sm font-medium">
+                                                    {request.eventLocation}
+                                                  </p>
+                                                </div>
+                                                <div>
+                                                  <p className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground">
+                                                    {item.itemType === "lost"
+                                                      ? "Date Found"
+                                                      : "Date Lost"}
+                                                  </p>
+                                                  <p className="text-sm font-medium">
+                                                    {request.eventDate}
+                                                  </p>
+                                                </div>
+                                              </div>
+
+                                              {request.proof && (
+                                                <div className="mt-2">
+                                                  <p className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground mb-2">
+                                                    Proof Image
+                                                  </p>
+                                                  <img
+                                                    src={request.proof}
+                                                    className="rounded-xl w-full max-h-40 object-cover border border-border"
+                                                    alt="Proof"
+                                                  />
+                                                </div>
+                                              )}
+
+                                              <div className="flex gap-2 pt-2">
+                                                {request.status ===
+                                                "approved" ? (
+                                                  <Button className="flex-1 rounded-xl bg-primary text-[10px] font-black uppercase">
+                                                    Initiate Meet up date
+                                                  </Button>
+                                                ) : (
+                                                  <>
+                                                    <Button onClick={() => handleAcceptRequest(item.id, request.id)} className="flex-1 rounded-xl bg-primary text-[10px] font-black uppercase">
+                                                      Accept
+                                                    </Button>
+                                                    <Button
+                                                      variant="outline"
+                                                      className="flex-1 rounded-xl text-[10px] font-black uppercase"
+                                                    >
+                                                      Reject
+                                                    </Button>
+                                                  </>
+                                                )}
+                                              </div>
+                                            </div>
+                                          </div>
+                                        ))
+                                      ) : (
+                                        <div className="text-center py-10 border-2 border-dashed border-border rounded-[1.5rem]">
+                                          <p className="text-muted-foreground">
+                                            No claims received yet for this
+                                            item.
+                                          </p>
+                                        </div>
+                                      )}
+                                    </div>
+                                  </DialogContent>
+                                </Dialog>
+
+                                <Dialog>
+                                  <DialogTrigger asChild>
+                                    <Button
+                                      variant="outline"
+                                      className="h-11 rounded-2xl border-destructive/20 bg-destructive/5 px-5 text-[10px] font-black uppercase tracking-[0.25em] text-destructive hover:bg-destructive hover:text-destructive-foreground sm:h-12"
+                                    >
+                                      <Trash2 className="mr-2 h-4 w-4" />
+                                      Delete
+                                    </Button>
+                                  </DialogTrigger>
+
+                                  <DialogContent className="rounded-[2rem] border-border bg-background sm:max-w-md">
+                                    <DialogHeader className="space-y-3 text-left">
+                                      <DialogTitle className="text-2xl font-black tracking-[-0.04em]">
+                                        Delete Listing
+                                      </DialogTitle>
+
+                                      <DialogDescription className="leading-relaxed text-muted-foreground">
+                                        This modal should handle permanent
+                                        deletion and cleanup.
+                                      </DialogDescription>
+                                    </DialogHeader>
+
+                                    <div className="space-y-4">
+                                      <div className="rounded-2xl border border-destructive/10 bg-destructive/5 p-4">
+                                        <p className="text-xs font-black uppercase tracking-[0.2em] text-destructive">
+                                          Cleanup Flow
+                                        </p>
+
+                                        <div className="mt-4 space-y-2 text-sm text-muted-foreground">
+                                          <p>• Delete live item listing</p>
+                                          <p>• Remove active claims & pings</p>
+                                          <p>• Remove storage assets</p>
+                                          <p>
+                                            • Create archive transaction log
+                                          </p>
+                                        </div>
+                                      </div>
+
+                                      <div className="flex flex-col gap-3 sm:flex-row">
+                                        <Button
+                                          variant="outline"
+                                          className="h-11 flex-1 rounded-2xl text-[10px] font-black uppercase tracking-[0.25em]"
+                                        >
+                                          Cancel
+                                        </Button>
+
+                                        <Button onClick={() => handleDeleteItem(item.imageId, item.id)} className="h-11 flex-1 rounded-2xl bg-destructive text-[10px] font-black uppercase tracking-[0.25em] text-destructive-foreground hover:bg-destructive/90">
+                                          Confirm Delete
+                                        </Button>
+                                      </div>
+                                    </div>
+                                  </DialogContent>
+                                </Dialog>
+                              </div>
                             </div>
                           </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  </motion.div>
-                );
-              })}
+                        </CardContent>
+                      </Card>
+                    </motion.div>
+                  );
+                })}
             </div>
           </div>
 
@@ -617,50 +726,6 @@ const page = () => {
                     approved by campus administrators.
                   </p>
                 </div>
-
-                <div className="rounded-[1.5rem] border border-border bg-background/70 p-4">
-                  <div className="mb-3 flex items-center gap-3">
-                    <Avatar className="h-10 w-10 border border-border">
-                      <AvatarImage src="https://github.com/shadcn.png" />
-
-                      <AvatarFallback>AD</AvatarFallback>
-                    </Avatar>
-
-                    <div>
-                      <p className="text-sm font-bold">
-                        Admin Verification Enabled
-                      </p>
-
-                      <p className="text-xs text-muted-foreground">
-                        Campus-safe recovery workflow
-                      </p>
-                    </div>
-                  </div>
-
-                  <Separator className="mb-4" />
-
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between rounded-xl bg-muted/40 px-4 py-3">
-                      <span className="text-sm text-muted-foreground">
-                        Pending Meetups
-                      </span>
-
-                      <span className="text-sm font-bold">2</span>
-                    </div>
-
-                    <div className="flex items-center justify-between rounded-xl bg-muted/40 px-4 py-3">
-                      <span className="text-sm text-muted-foreground">
-                        Approved Claims
-                      </span>
-
-                      <span className="text-sm font-bold">5</span>
-                    </div>
-                  </div>
-                </div>
-
-                <Button className="h-11 w-full rounded-2xl text-[10px] font-black uppercase tracking-[0.25em] sm:h-12">
-                  View Admin Queue
-                </Button>
               </CardContent>
             </Card>
           </div>
