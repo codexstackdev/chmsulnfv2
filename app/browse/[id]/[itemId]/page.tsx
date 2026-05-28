@@ -16,6 +16,7 @@ import {
   PackageSearch,
   FileText,
   CheckCircle2,
+  AlertTriangle,
 } from "lucide-react";
 
 import { motion } from "framer-motion";
@@ -26,7 +27,14 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Separator } from "@/components/ui/separator";
 import { useParams, useRouter } from "next/navigation";
-import { child, get, getDatabase, ref, remove } from "firebase/database";
+import {
+  child,
+  get,
+  getDatabase,
+  onValue,
+  ref,
+  remove,
+} from "firebase/database";
 import { database } from "@/app/lib/firebase";
 import { deleteImage } from "@/app/hooks/actions";
 import { toast } from "sonner";
@@ -75,28 +83,48 @@ const ItemDetailPage = () => {
   const params = useParams();
   const itemId = params.itemId;
   const userId = params.id;
+
   const [itemData, setItemData] = useState<ItemProps | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [error, setError] = useState("");
 
   const router = useRouter();
 
   useEffect(() => {
     try {
-      const dbRef = ref(database);
+      const itemRef = ref(database, `/items/${itemId}`);
 
-      get(child(dbRef, `/items/${itemId}`)).then((snapshot) => {
-        if (snapshot.exists()) {
-          setItemData(snapshot.val());
-        } else {
-          setItemData(null);
-        }
-      });
+      const unsubscribe = onValue(
+        itemRef,
+        (snapshot) => {
+          if (snapshot.exists()) {
+            setItemData(snapshot.val());
+            setError("");
+          } else {
+            setItemData(null);
+            setError("Item not found");
+          }
+
+          setLoading(false);
+        },
+        () => {
+          setError("Unable to fetch item");
+          setLoading(false);
+        },
+      );
+
+      return () => unsubscribe();
     } catch (error) {
       console.error(error);
+      setLoading(false);
+      setError("Something went wrong");
     }
   }, [itemId]);
 
   const isLost = itemData?.itemType === "lost";
+  const isRecovered = itemData?.itemType === "recovered";
+  const isOwner = userId === itemData?.user._id;
 
   const content = useMemo(() => {
     if (isLost) {
@@ -139,40 +167,73 @@ const ItemDetailPage = () => {
   const StatusIcon = content.icon;
 
   const handleDeleteItem = async () => {
-    setLoading(true);
+    setDeleteLoading(true);
+
     try {
       const req = await deleteImage(
         userId as string,
         itemData?.imageId as string,
       );
+
       if (req.success) {
         const db = getDatabase();
         const recordDb = ref(db, `/items/${itemId}`);
-        remove(recordDb)
-          .then(() => {
-            toast.success("Item deleted successfully");
-            router.replace(`/browse/${userId}`);
-          })
-          .catch((error) => {
-            toast.error("Unable to delete item");
-            console.error(error);
-          });
+
+        await remove(recordDb);
+
+        toast.success("Item deleted successfully");
+
+        router.replace(`/browse/${userId}`);
       } else {
         toast.error(req.message);
       }
     } catch (error) {
       console.error(error);
+      toast.error("Unable to delete item");
     } finally {
-      setLoading(false);
+      setDeleteLoading(false);
     }
   };
 
   const ctaButton = (
-    <Button className="h-14 p-5 flex-1 rounded-2xl text-xs font-black uppercase tracking-[0.3em] transition-all duration-300 hover:scale-[1.01] active:scale-[0.98]">
+    <Button className="h-14 flex-1 rounded-2xl p-5 text-xs font-black uppercase tracking-[0.3em] transition-all duration-300 hover:scale-[1.01] active:scale-[0.98]">
       <Fingerprint className="mr-3 h-4 w-4" />
       {content.cta}
     </Button>
   );
+
+  if (loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <Spinner className="size-10" />
+      </div>
+    );
+  }
+
+  if (error || !itemData) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center gap-5 bg-background px-6 text-center">
+        <div className="rounded-full bg-destructive/10 p-5">
+          <AlertTriangle className="h-10 w-10 text-destructive" />
+        </div>
+
+        <div className="space-y-2">
+          <h1 className="text-3xl font-black">{error}</h1>
+
+          <p className="text-muted-foreground">
+            The item may have been deleted or no longer exists.
+          </p>
+        </div>
+
+        <Button
+          onClick={() => router.back()}
+          className="rounded-2xl px-6"
+        >
+          Go Back
+        </Button>
+      </div>
+    );
+  }
 
   return (
     <div className="relative min-h-screen overflow-hidden bg-background text-foreground">
@@ -418,15 +479,25 @@ const ItemDetailPage = () => {
                   transition={{ delay: 0.15 }}
                   className="flex flex-col gap-3 sm:flex-row"
                 >
-                  {itemData?.itemType === "recovered" ? (
-                    <Alert className="bg-green-50 border-green-200">
+                  {isRecovered ? (
+                    <Alert className="border-green-200 bg-green-50">
                       <CheckCircle2 className="h-4 w-4 stroke-green-600" />
-                      <AlertTitle className="text-green-800 font-semibold">
+
+                      <AlertTitle className="font-semibold text-green-800">
                         Item Successfully Recovered
                       </AlertTitle>
+
                       <AlertDescription className="text-green-700">
                         Great news! This item has been returned to its owner.
                         The claim process is now complete.
+                      </AlertDescription>
+                    </Alert>
+                  ) : isOwner ? (
+                    <Alert>
+                      <AlertTitle>Your Post</AlertTitle>
+
+                      <AlertDescription>
+                        You cannot claim or verify your own item.
                       </AlertDescription>
                     </Alert>
                   ) : isLost ? (
@@ -443,14 +514,18 @@ const ItemDetailPage = () => {
                     />
                   )}
 
-                  {userId === itemData?.user._id && (
+                  {isOwner && (
                     <Button
                       variant="outline"
-                      disabled={loading}
+                      disabled={deleteLoading}
                       onClick={handleDeleteItem}
                       className="h-14 rounded-2xl border-destructive/20 bg-destructive/5 px-6 text-xs font-black uppercase tracking-[0.25em] text-destructive transition-all duration-300 hover:bg-destructive hover:text-destructive-foreground active:scale-[0.98]"
                     >
-                      {loading ? <Spinner className="size-5" /> : "Delete Post"}
+                      {deleteLoading ? (
+                        <Spinner className="size-5" />
+                      ) : (
+                        "Delete Post"
+                      )}
                     </Button>
                   )}
                 </motion.div>
@@ -476,12 +551,16 @@ const ItemDetailPage = () => {
 
               <div className="space-y-4">
                 <div className="flex items-center justify-between rounded-2xl border border-border bg-muted/40 px-4 py-4">
-                  <span className="text-sm text-muted-foreground">Status</span>
+                  <span className="text-sm text-muted-foreground">
+                    Status
+                  </span>
 
                   <Badge
                     className={`rounded-full px-4 py-1.5 text-[10px] font-black uppercase tracking-[0.25em] ${content.statusStyle}`}
                   >
-                    {content.statusLabel}
+                    {isRecovered
+                      ? "Recovered"
+                      : content.statusLabel}
                   </Badge>
                 </div>
 

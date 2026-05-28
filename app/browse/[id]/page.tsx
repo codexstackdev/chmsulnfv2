@@ -145,7 +145,7 @@ const UserProfile = ({ user }: { user: User | null }) => {
         </DropdownMenuItem>
 
         {user?.role === "admin" && (
-          <DropdownMenuItem className="gap-2 py-2.5 cursor-pointer focus:bg-accent rounded-lg">
+          <DropdownMenuItem onClick={() => router.push(`/admin/${user?._id}`)} className="gap-2 py-2.5 cursor-pointer focus:bg-accent rounded-lg">
             <LockIcon className="h-4 w-4 text-muted-foreground" />
             <span className="text-sm font-medium">Admin</span>
           </DropdownMenuItem>

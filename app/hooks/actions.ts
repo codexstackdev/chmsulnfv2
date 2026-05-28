@@ -120,4 +120,19 @@ export const updatePostedItem = async(id:string, itemId:string) => {
   }
 }
 
+export const getAllUser = async(id:string) => {
+  try {
+    const req = await fetch("/api/v1/data/user", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({id})
+    });
+    const data = await req.json();
+    if(!data.success) return { success: false, message: data.message}
+    return data;
+  } catch (error) {
+    return { success: false, message: handleError(error)}
+  }
+}
+
 //end of Data

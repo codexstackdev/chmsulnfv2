@@ -12,6 +12,7 @@ import {
   Trash2,
   UserCheck,
   ArrowUpRight,
+  CalendarDays,
 } from "lucide-react";
 
 import { motion } from "framer-motion";
@@ -21,7 +22,9 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import { useEffect, useMemo, useState } from "react";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
   equalTo,
@@ -50,7 +53,14 @@ type ItemProps = {
   id: string;
   title: string;
   description: string;
-  itemType: "lost" | "found" | "pending" | "approved" | "rejected" | "resolved";
+  itemType:
+    | "lost"
+    | "found"
+    | "pending"
+    | "approved"
+    | "rejected"
+    | "resolved"
+    | "recovered";
   category: string;
   date: string;
   location: string;
@@ -71,8 +81,10 @@ type RequestProps = {
   eventDate: string;
   identifyingDetail: string;
   requestedBt: string;
-  status: "approved" | "pending" | "rejected";
+  status: "approved" | "pending" | "rejected" | "verified";
   proof?: string;
+  meetupDate?: string;
+  meetupLocation?: string;
 };
 
 const page = () => {
@@ -89,10 +101,19 @@ const page = () => {
   const pendingCount = useUser((s) => s.pendingCount);
   const closedCount = useUser((s) => s.closedCount);
 
+  const [deleteOpenId, setDeleteOpenId] = useState<string | null>(null);
+  const [requestsOpenId, setRequestsOpenId] = useState<string | null>(null);
+  const [meetupOpen, setMeetupOpen] = useState<{
+    itemId: string;
+    requestId: string;
+  } | null>(null);
+  const [meetupDate, setMeetupDate] = useState("");
+  const [meetupLocation, setMeetupLocation] = useState("");
+  const [meetupLoading, setMeetupLoading] = useState(false);
+
   useEffect(() => {
     const subscribe = useUser.getState().subscribeToRequests;
     const unsubscribe = useUser.getState().unsubscribeFromRequests;
-
     subscribe();
     return () => unsubscribe();
   }, []);
@@ -114,9 +135,11 @@ const page = () => {
         }));
         setPostedItems(itemList);
         setTotalItem(itemList.length);
+      } else {
+        setPostedItems([]);
+        setTotalItem(0);
       }
     });
-
     return () => unsubscribe();
   }, [id]);
 
@@ -143,49 +166,80 @@ const page = () => {
       const updates: any = {};
       updates[`request/${itemId}/${requestId}/status`] = "approved";
       updates[`items/${itemId}/itemType`] = "recovered";
-
       await update(ref(database), updates);
       toast.success("Request approved! Coordinate the meetup next.");
     } catch (error) {
       console.error("Error accepting request:", error);
+      toast.error("Failed to approve request.");
     }
   };
 
-  const handleDeleteItem = async (imageId:string, itemId:string) => {
-  try {
-    const imgRes = await deleteImage(
-      id as string,
-      imageId,
-    );
-
-    if (imgRes.success) {
-      const db = getDatabase();
-      
-      const itemRef = ref(db, `/items/${itemId}`);
-      const requestsRef = ref(db, `/requests/${itemId}`);
-
-      await Promise.all([
-        remove(itemRef),
-        remove(requestsRef)
-      ]);
-
-      toast.success("Item and associated requests deleted successfully");
-    } else {
-      toast.error(imgRes.message);
+  const handleRejectRequest = async (itemId: string, requestId: string) => {
+    try {
+      await update(ref(database), {
+        [`request/${itemId}/${requestId}/status`]: "rejected",
+      });
+      toast.success("Request rejected.");
+    } catch (error) {
+      console.error("Error rejecting request:", error);
+      toast.error("Failed to reject request.");
     }
-  } catch (error) {
-    toast.error("Unable to delete item or requests");
-    console.error("Delete Error:", error);
-  }
-};
+  };
+
+  const handleScheduleMeetup = async () => {
+    if (!meetupOpen) return;
+    if (!meetupDate.trim() || !meetupLocation.trim()) {
+      toast.error("Please fill in both meetup date and location.");
+      return;
+    }
+    setMeetupLoading(true);
+    try {
+      await update(ref(database), {
+        [`request/${meetupOpen.itemId}/${meetupOpen.requestId}/meetupDate`]:
+          meetupDate,
+        [`request/${meetupOpen.itemId}/${meetupOpen.requestId}/meetupLocation`]:
+          meetupLocation,
+        [`request/${meetupOpen.itemId}/${meetupOpen.requestId}/status`]:
+          "approved",
+      });
+      toast.success("Meetup scheduled successfully!");
+      setMeetupOpen(null);
+      setMeetupDate("");
+      setMeetupLocation("");
+    } catch (error) {
+      console.error("Error scheduling meetup:", error);
+      toast.error("Failed to schedule meetup.");
+    } finally {
+      setMeetupLoading(false);
+    }
+  };
+
+  const handleDeleteItem = async (imageId: string, itemId: string) => {
+    try {
+      const imgRes = await deleteImage(id as string, imageId);
+      if (imgRes.success) {
+        const db = getDatabase();
+        const itemRef = ref(db, `/items/${itemId}`);
+        const requestsRef = ref(db, `/requests/${itemId}`);
+        await Promise.all([remove(itemRef), remove(requestsRef)]);
+        toast.success("Item and associated requests deleted successfully");
+        setDeleteOpenId(null);
+      } else {
+        toast.error(imgRes.message);
+      }
+    } catch (error) {
+      toast.error("Unable to delete item or requests");
+      console.error("Delete Error:", error);
+    }
+  };
 
   return (
     <div className="relative min-h-screen overflow-hidden bg-background text-foreground">
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,hsla(var(--primary)/0.08),transparent_35%)]" />
-
       <div className="absolute inset-0 bg-[linear-gradient(to_right,hsl(var(--border)/0.15)_1px,transparent_1px),linear-gradient(to_bottom,hsl(var(--border)/0.15)_1px,transparent_1px)] bg-size-[80px_80px] opacity-20" />
 
       <main className="relative z-10 mx-auto flex w-full max-w-7xl flex-col gap-5 px-3 py-3 sm:px-4 sm:py-4 md:px-6 md:py-6 lg:gap-8 lg:px-8 lg:py-10">
+        {/* Header */}
         <motion.div
           initial={{ opacity: 0, y: 24 }}
           animate={{ opacity: 1, y: 0 }}
@@ -196,12 +250,10 @@ const page = () => {
             <Badge className="rounded-full border-border bg-primary/10 px-4 py-2 text-[10px] font-black uppercase tracking-[0.3em] text-primary">
               Campus Recovery Dashboard
             </Badge>
-
             <div className="space-y-2">
               <h1 className="text-2xl font-black leading-[0.95] tracking-[-0.05em] sm:text-3xl md:text-4xl lg:text-5xl">
                 Your Active Listings
               </h1>
-
               <p className="max-w-2xl text-sm leading-relaxed text-muted-foreground sm:text-base">
                 Track claims, ping requests, verification updates, and meetup
                 approvals for all your posted items in real time.
@@ -210,61 +262,27 @@ const page = () => {
           </div>
 
           <div className="grid grid-cols-2 gap-2 sm:gap-3 lg:grid-cols-4">
-            <Card className="rounded-2xl border-border bg-background/70">
-              <CardContent className="space-y-2 p-4">
-                <div className="flex items-center justify-between">
-                  <PackageSearch className="h-5 w-5 text-primary" />
-
-                  <span className="text-xs font-bold text-muted-foreground">
-                    Total
-                  </span>
-                </div>
-
-                <h3 className="text-2xl font-black">{totalItem}</h3>
-              </CardContent>
-            </Card>
-
-            <Card className="rounded-2xl border-border bg-background/70">
-              <CardContent className="space-y-2 p-4">
-                <div className="flex items-center justify-between">
-                  <BellRing className="h-5 w-5 text-primary" />
-
-                  <span className="text-xs font-bold text-muted-foreground">
-                    Requests
-                  </span>
-                </div>
-
-                <h3 className="text-2xl font-black">{requestCount}</h3>
-              </CardContent>
-            </Card>
-
-            <Card className="rounded-2xl border-border bg-background/70">
-              <CardContent className="space-y-2 p-4">
-                <div className="flex items-center justify-between">
-                  <Clock3 className="h-5 w-5 text-primary" />
-
-                  <span className="text-xs font-bold text-muted-foreground">
-                    Pending
-                  </span>
-                </div>
-
-                <h3 className="text-2xl font-black">{pendingCount}</h3>
-              </CardContent>
-            </Card>
-
-            <Card className="rounded-2xl border-border bg-background/70">
-              <CardContent className="space-y-2 p-4">
-                <div className="flex items-center justify-between">
-                  <CheckCircle2 className="h-5 w-5 text-primary" />
-
-                  <span className="text-xs font-bold text-muted-foreground">
-                    Closed
-                  </span>
-                </div>
-
-                <h3 className="text-2xl font-black">{closedCount}</h3>
-              </CardContent>
-            </Card>
+            {[
+              { icon: PackageSearch, label: "Total", value: totalItem },
+              { icon: BellRing, label: "Requests", value: requestCount },
+              { icon: Clock3, label: "Pending", value: pendingCount },
+              { icon: CheckCircle2, label: "Closed", value: closedCount },
+            ].map(({ icon: Icon, label, value }) => (
+              <Card
+                key={label}
+                className="rounded-2xl border-border bg-background/70"
+              >
+                <CardContent className="space-y-2 p-4">
+                  <div className="flex items-center justify-between">
+                    <Icon className="h-5 w-5 text-primary" />
+                    <span className="text-xs font-bold text-muted-foreground">
+                      {label}
+                    </span>
+                  </div>
+                  <h3 className="text-2xl font-black">{value}</h3>
+                </CardContent>
+              </Card>
+            ))}
           </div>
         </motion.div>
 
@@ -280,7 +298,6 @@ const page = () => {
                 <h2 className="text-lg font-black tracking-[-0.03em] sm:text-xl">
                   Posted Items
                 </h2>
-
                 <p className="text-sm text-muted-foreground">
                   Manage all your lost and found listings
                 </p>
@@ -313,7 +330,6 @@ const page = () => {
                                 alt={item.title}
                                 className="h-full w-full object-cover pointer-events-none"
                               />
-
                               <div className="absolute left-3 top-3 flex flex-wrap gap-2 sm:left-4 sm:top-4">
                                 <Badge
                                   className={`rounded-full px-4 py-1.5 text-[10px] font-black uppercase tracking-[0.25em] ${
@@ -338,7 +354,6 @@ const page = () => {
                                       >
                                         {item.category}
                                       </Badge>
-
                                       <Badge
                                         variant="outline"
                                         className="rounded-full border-border bg-muted/40 px-4 py-1.5 text-[10px] font-black uppercase tracking-[0.25em]"
@@ -347,12 +362,10 @@ const page = () => {
                                         {item.location}
                                       </Badge>
                                     </div>
-
                                     <div className="space-y-2">
                                       <h3 className="text-xl font-black leading-tight tracking-[-0.03em] sm:text-2xl">
                                         {item.title}
                                       </h3>
-
                                       <p className="text-sm text-muted-foreground">
                                         Posted on {item.date}
                                       </p>
@@ -361,12 +374,10 @@ const page = () => {
 
                                   <div className="flex w-full items-center gap-2 rounded-2xl border border-border bg-background/70 px-4 py-3 sm:w-fit">
                                     <BellRing className="h-4 w-4 text-primary" />
-
                                     <div>
                                       <p className="text-xs font-bold uppercase tracking-[0.2em] text-muted-foreground">
                                         Activity
                                       </p>
-
                                       <p className="text-sm font-semibold">
                                         {item.itemType}{" "}
                                         {isLost ? "Ping Requests" : "Claims"}
@@ -379,12 +390,10 @@ const page = () => {
                                   <div className="rounded-2xl border border-border bg-background/60 p-4">
                                     <div className="mb-3 flex items-center gap-2">
                                       <ShieldCheck className="h-4 w-4 text-primary" />
-
                                       <span className="text-[10px] font-black uppercase tracking-[0.25em] text-muted-foreground">
                                         Verification
                                       </span>
                                     </div>
-
                                     <p className="text-sm font-medium leading-relaxed text-muted-foreground">
                                       {isLost
                                         ? "Waiting for a finder to submit proof."
@@ -395,12 +404,10 @@ const page = () => {
                                   <div className="rounded-2xl border border-border bg-background/60 p-4">
                                     <div className="mb-3 flex items-center gap-2">
                                       <Fingerprint className="h-4 w-4 text-primary" />
-
                                       <span className="text-[10px] font-black uppercase tracking-[0.25em] text-muted-foreground">
                                         Security
                                       </span>
                                     </div>
-
                                     <p className="text-sm font-medium leading-relaxed text-muted-foreground">
                                       Hidden identifying details protected.
                                     </p>
@@ -409,12 +416,10 @@ const page = () => {
                                   <div className="rounded-2xl border border-border bg-background/60 p-4">
                                     <div className="mb-3 flex items-center gap-2">
                                       <UserCheck className="h-4 w-4 text-primary" />
-
                                       <span className="text-[10px] font-black uppercase tracking-[0.25em] text-muted-foreground">
                                         Admin
                                       </span>
                                     </div>
-
                                     <p className="text-sm font-medium leading-relaxed text-muted-foreground">
                                       Campus meetup approval required.
                                     </p>
@@ -434,13 +439,22 @@ const page = () => {
                                   <Eye className="mr-2 h-4 w-4" />
                                   Open Listing
                                 </Button>
-                                <Dialog>
+
+                                <Dialog
+                                  open={requestsOpenId === item.id}
+                                  onOpenChange={(open) => {
+                                    if (open) {
+                                      setRequestsOpenId(item.id);
+                                      fetchRequestsForItem(item.id);
+                                    } else {
+                                      setRequestsOpenId(null);
+                                      setSelectedItemRequests([]);
+                                    }
+                                  }}
+                                >
                                   <DialogTrigger asChild>
                                     <Button
                                       variant="outline"
-                                      onClick={() =>
-                                        fetchRequestsForItem(item.id)
-                                      }
                                       className="h-11 rounded-2xl border-border bg-background/70 px-5 text-[10px] font-black uppercase tracking-[0.25em] sm:h-12"
                                     >
                                       <ArrowUpRight className="mr-2 h-4 w-4" />
@@ -468,7 +482,13 @@ const page = () => {
                                         selectedItemRequests.map((request) => (
                                           <div
                                             key={request.id}
-                                            className="rounded-[1.5rem] border border-border bg-card/60 p-5"
+                                            className={`rounded-[1.5rem] border bg-card/60 p-5 ${
+                                              request.status === "approved"
+                                                ? "border-green-500/30 bg-green-500/5"
+                                                : request.status === "rejected"
+                                                  ? "border-destructive/20 bg-destructive/5"
+                                                  : "border-border"
+                                            }`}
                                           >
                                             <div className="mb-4 flex items-center justify-between">
                                               <div className="flex items-center gap-3">
@@ -490,87 +510,253 @@ const page = () => {
                                                     ID:{" "}
                                                     {request.claimerStudentId}
                                                   </p>
+                                                  {request.contactNumber && (
+                                                    <p className="text-xs text-muted-foreground">
+                                                      📞 {request.contactNumber}
+                                                    </p>
+                                                  )}
                                                 </div>
                                               </div>
-                                              <Badge className="bg-primary/20 text-primary border-none capitalize">
+                                              <Badge
+                                                className={`border-none capitalize ${
+                                                  request.status === "approved"
+                                                    ? "bg-green-500/20 text-green-600"
+                                                    : request.status ===
+                                                        "rejected"
+                                                      ? "bg-destructive/20 text-destructive"
+                                                      : "bg-primary/20 text-primary"
+                                                }`}
+                                              >
                                                 {request.status}
                                               </Badge>
                                             </div>
 
-                                            <div className="rounded-2xl border border-border bg-muted/40 p-4 space-y-3">
-                                              <div>
-                                                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-primary">
-                                                  Message
-                                                </p>
-                                                <p className="text-sm text-foreground mt-1 italic">
-                                                  "{request.identifyingDetail}"
-                                                </p>
-                                                <Separator />
-                                                {request.additionalInfo && (
+                                            {request.status === "approved" ||
+                                            request.status === "verified" ? (
+                                              <div className="space-y-3">
+                                                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                                                  <div className="rounded-2xl border border-border bg-muted/40 p-4 space-y-3">
+                                                    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-primary">
+                                                      Claim Details
+                                                    </p>
+                                                    <p className="text-sm text-foreground italic">
+                                                      "
+                                                      {
+                                                        request.identifyingDetail
+                                                      }
+                                                      "
+                                                    </p>
+                                                    {request.additionalInfo && (
+                                                      <>
+                                                        <Separator />
+                                                        <p className="text-sm text-foreground italic">
+                                                          "
+                                                          {
+                                                            request.additionalInfo
+                                                          }
+                                                          "
+                                                        </p>
+                                                      </>
+                                                    )}
+                                                    <div className="pt-1 space-y-2">
+                                                      <div>
+                                                        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground">
+                                                          {item.itemType ===
+                                                          "lost"
+                                                            ? "Location Found"
+                                                            : "Location Lost"}
+                                                        </p>
+                                                        <p className="text-sm font-medium">
+                                                          {
+                                                            request.eventLocation
+                                                          }
+                                                        </p>
+                                                      </div>
+                                                      <div>
+                                                        <p className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground">
+                                                          {item.itemType ===
+                                                          "lost"
+                                                            ? "Date Found"
+                                                            : "Date Lost"}
+                                                        </p>
+                                                        <p className="text-sm font-medium">
+                                                          {request.eventDate}
+                                                        </p>
+                                                      </div>
+                                                    </div>
+                                                  </div>
+
+                                                  <div className="rounded-2xl border border-green-500/30 bg-green-500/10 p-4 space-y-3 flex flex-col justify-between">
+                                                    <div className="space-y-2">
+                                                      <p className="text-[10px] font-black uppercase tracking-[0.2em] text-green-600">
+                                                        ✅ Meetup Details
+                                                      </p>
+                                                      {request.meetupLocation ? (
+                                                        <>
+                                                          <div>
+                                                            <p className="text-[10px] font-black uppercase tracking-[0.15em] text-muted-foreground">
+                                                              Location
+                                                            </p>
+                                                            <p className="text-sm font-bold">
+                                                              📍{" "}
+                                                              {
+                                                                request.meetupLocation
+                                                              }
+                                                            </p>
+                                                          </div>
+                                                          <div>
+                                                            <p className="text-[10px] font-black uppercase tracking-[0.15em] text-muted-foreground">
+                                                              Date & Time
+                                                            </p>
+                                                            <p className="text-sm font-bold">
+                                                              📅{" "}
+                                                              {
+                                                                request.meetupDate
+                                                              }
+                                                            </p>
+                                                          </div>
+                                                        </>
+                                                      ) : (
+                                                        <p className="text-sm text-muted-foreground italic">
+                                                          No meetup scheduled
+                                                          yet. Set one below.
+                                                        </p>
+                                                      )}
+                                                    </div>
+                                                    {request.status ===
+                                                      "approved" && (
+                                                      <Button
+                                                        onClick={() => {
+                                                          setMeetupOpen({
+                                                            itemId: item.id,
+                                                            requestId:
+                                                              request.id,
+                                                          });
+                                                          setMeetupDate(
+                                                            request.meetupDate ||
+                                                              "",
+                                                          );
+                                                          setMeetupLocation(
+                                                            request.meetupLocation ||
+                                                              "",
+                                                          );
+                                                        }}
+                                                        className="w-full rounded-xl bg-green-600 hover:bg-green-700 text-white text-[10px] font-black uppercase mt-2"
+                                                      >
+                                                        <CalendarDays className="mr-2 h-3.5 w-3.5" />
+                                                        {request.meetupDate
+                                                          ? "Update Meetup"
+                                                          : "Schedule Meetup"}
+                                                      </Button>
+                                                    )}
+                                                  </div>
+                                                </div>
+
+                                                {request.proof && (
+                                                  <div>
+                                                    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground mb-2">
+                                                      Proof Image
+                                                    </p>
+                                                    <img
+                                                      src={request.proof}
+                                                      className="rounded-xl w-full max-h-40 object-cover border border-border"
+                                                      alt="Proof"
+                                                    />
+                                                  </div>
+                                                )}
+                                              </div>
+                                            ) : (
+                                              <div className="rounded-2xl border border-border bg-muted/40 p-4 space-y-3">
+                                                <div>
+                                                  <p className="text-[10px] font-black uppercase tracking-[0.2em] text-primary">
+                                                    Message
+                                                  </p>
                                                   <p className="text-sm text-foreground mt-1 italic">
-                                                    Additional Information: "
-                                                    {request.additionalInfo}"
+                                                    "{request.identifyingDetail}
+                                                    "
                                                   </p>
+                                                  <Separator className="my-2" />
+                                                  {request.additionalInfo && (
+                                                    <p className="text-sm text-foreground mt-1 italic">
+                                                      Additional Information: "
+                                                      {request.additionalInfo}"
+                                                    </p>
+                                                  )}
+                                                </div>
+
+                                                <div className="grid grid-cols-2 gap-4">
+                                                  <div>
+                                                    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground">
+                                                      {item.itemType === "lost"
+                                                        ? "Location Found"
+                                                        : "Location Lost"}
+                                                    </p>
+                                                    <p className="text-sm font-medium">
+                                                      {request.eventLocation}
+                                                    </p>
+                                                  </div>
+                                                  <div>
+                                                    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground">
+                                                      {item.itemType === "lost"
+                                                        ? "Date Found"
+                                                        : "Date Lost"}
+                                                    </p>
+                                                    <p className="text-sm font-medium">
+                                                      {request.eventDate}
+                                                    </p>
+                                                  </div>
+                                                </div>
+
+                                                {request.proof && (
+                                                  <div className="mt-2">
+                                                    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground mb-2">
+                                                      Proof Image
+                                                    </p>
+                                                    <img
+                                                      src={request.proof}
+                                                      className="rounded-xl w-full max-h-40 object-cover border border-border"
+                                                      alt="Proof"
+                                                    />
+                                                  </div>
                                                 )}
-                                              </div>
 
-                                              <div className="grid grid-cols-2 gap-4">
-                                                <div>
-                                                  <p className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground">
-                                                    {item.itemType === "lost"
-                                                      ? "Location Found"
-                                                      : "Location Lost"}
-                                                  </p>
-                                                  <p className="text-sm font-medium">
-                                                    {request.eventLocation}
-                                                  </p>
-                                                </div>
-                                                <div>
-                                                  <p className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground">
-                                                    {item.itemType === "lost"
-                                                      ? "Date Found"
-                                                      : "Date Lost"}
-                                                  </p>
-                                                  <p className="text-sm font-medium">
-                                                    {request.eventDate}
-                                                  </p>
+                                                <div className="flex gap-2 pt-2">
+                                                  {request.status ===
+                                                  "rejected" ? (
+                                                    <p className="text-xs text-muted-foreground italic w-full text-center py-1">
+                                                      This request has been
+                                                      rejected.
+                                                    </p>
+                                                  ) : (
+                                                    <>
+                                                      <Button
+                                                        onClick={() =>
+                                                          handleAcceptRequest(
+                                                            item.id,
+                                                            request.id,
+                                                          )
+                                                        }
+                                                        className="flex-1 rounded-xl bg-primary text-[10px] font-black uppercase"
+                                                      >
+                                                        Accept
+                                                      </Button>
+                                                      <Button
+                                                        variant="outline"
+                                                        onClick={() =>
+                                                          handleRejectRequest(
+                                                            item.id,
+                                                            request.id,
+                                                          )
+                                                        }
+                                                        className="flex-1 rounded-xl text-[10px] font-black uppercase border-destructive/30 text-destructive hover:bg-destructive hover:text-destructive-foreground"
+                                                      >
+                                                        Reject
+                                                      </Button>
+                                                    </>
+                                                  )}
                                                 </div>
                                               </div>
-
-                                              {request.proof && (
-                                                <div className="mt-2">
-                                                  <p className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground mb-2">
-                                                    Proof Image
-                                                  </p>
-                                                  <img
-                                                    src={request.proof}
-                                                    className="rounded-xl w-full max-h-40 object-cover border border-border"
-                                                    alt="Proof"
-                                                  />
-                                                </div>
-                                              )}
-
-                                              <div className="flex gap-2 pt-2">
-                                                {request.status ===
-                                                "approved" ? (
-                                                  <Button className="flex-1 rounded-xl bg-primary text-[10px] font-black uppercase">
-                                                    Initiate Meet up date
-                                                  </Button>
-                                                ) : (
-                                                  <>
-                                                    <Button onClick={() => handleAcceptRequest(item.id, request.id)} className="flex-1 rounded-xl bg-primary text-[10px] font-black uppercase">
-                                                      Accept
-                                                    </Button>
-                                                    <Button
-                                                      variant="outline"
-                                                      className="flex-1 rounded-xl text-[10px] font-black uppercase"
-                                                    >
-                                                      Reject
-                                                    </Button>
-                                                  </>
-                                                )}
-                                              </div>
-                                            </div>
+                                            )}
                                           </div>
                                         ))
                                       ) : (
@@ -585,7 +771,12 @@ const page = () => {
                                   </DialogContent>
                                 </Dialog>
 
-                                <Dialog>
+                                <Dialog
+                                  open={deleteOpenId === item.id}
+                                  onOpenChange={(open) =>
+                                    setDeleteOpenId(open ? item.id : null)
+                                  }
+                                >
                                   <DialogTrigger asChild>
                                     <Button
                                       variant="outline"
@@ -601,10 +792,9 @@ const page = () => {
                                       <DialogTitle className="text-2xl font-black tracking-[-0.04em]">
                                         Delete Listing
                                       </DialogTitle>
-
                                       <DialogDescription className="leading-relaxed text-muted-foreground">
-                                        This modal should handle permanent
-                                        deletion and cleanup.
+                                        This action is permanent and cannot be
+                                        undone.
                                       </DialogDescription>
                                     </DialogHeader>
 
@@ -613,7 +803,6 @@ const page = () => {
                                         <p className="text-xs font-black uppercase tracking-[0.2em] text-destructive">
                                           Cleanup Flow
                                         </p>
-
                                         <div className="mt-4 space-y-2 text-sm text-muted-foreground">
                                           <p>• Delete live item listing</p>
                                           <p>• Remove active claims & pings</p>
@@ -627,12 +816,20 @@ const page = () => {
                                       <div className="flex flex-col gap-3 sm:flex-row">
                                         <Button
                                           variant="outline"
+                                          onClick={() => setDeleteOpenId(null)}
                                           className="h-11 flex-1 rounded-2xl text-[10px] font-black uppercase tracking-[0.25em]"
                                         >
                                           Cancel
                                         </Button>
-
-                                        <Button onClick={() => handleDeleteItem(item.imageId, item.id)} className="h-11 flex-1 rounded-2xl bg-destructive text-[10px] font-black uppercase tracking-[0.25em] text-destructive-foreground hover:bg-destructive/90">
+                                        <Button
+                                          onClick={() =>
+                                            handleDeleteItem(
+                                              item.imageId,
+                                              item.id,
+                                            )
+                                          }
+                                          className="h-11 flex-1 rounded-2xl bg-destructive text-[10px] font-black uppercase tracking-[0.25em] text-destructive-foreground hover:bg-destructive/90"
+                                        >
                                           Confirm Delete
                                         </Button>
                                       </div>
@@ -660,55 +857,10 @@ const page = () => {
               <h2 className="text-lg font-black tracking-[-0.03em] sm:text-xl">
                 Live Activity
               </h2>
-
               <p className="text-sm text-muted-foreground">
                 Realtime claim and ping updates
               </p>
             </motion.div>
-
-            {/* <Card className="rounded-[1.75rem] border-border bg-card/60 backdrop-blur-xl lg:rounded-[2rem]">
-              <CardContent className="space-y-4 p-4 sm:p-5 md:p-6">
-                {activities.map((activity, index) => (
-                  <div key={activity.id}>
-                    <div className="flex gap-4">
-                      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-primary/10">
-                        {activity.type === "claim" && (
-                          <Fingerprint className="h-5 w-5 text-primary" />
-                        )}
-
-                        {activity.type === "ping" && (
-                          <BellRing className="h-5 w-5 text-primary" />
-                        )}
-
-                        {activity.type === "approved" && (
-                          <CheckCircle2 className="h-5 w-5 text-primary" />
-                        )}
-                      </div>
-
-                      <div className="flex-1 space-y-2">
-                        <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
-                          <h3 className="text-sm font-bold leading-relaxed">
-                            {activity.title}
-                          </h3>
-
-                          <span className="text-xs text-muted-foreground">
-                            {activity.time}
-                          </span>
-                        </div>
-
-                        <p className="text-sm leading-relaxed text-muted-foreground">
-                          {activity.description}
-                        </p>
-                      </div>
-                    </div>
-
-                    {index !== activities.length - 1 && (
-                      <Separator className="mt-5" />
-                    )}
-                  </div>
-                ))}
-              </CardContent>
-            </Card> */}
 
             <Card className="overflow-hidden rounded-[1.75rem] border-primary/10 bg-card/60 backdrop-blur-xl lg:rounded-[2rem]">
               <CardContent className="space-y-4 p-4 sm:p-5 md:p-6">
@@ -716,11 +868,9 @@ const page = () => {
                   <Badge className="rounded-full bg-primary/10 px-4 py-2 text-[10px] font-black uppercase tracking-[0.25em] text-primary">
                     Safety Protocol
                   </Badge>
-
                   <h3 className="text-xl font-black leading-tight tracking-[-0.04em] sm:text-2xl">
                     Secure Campus Meetup
                   </h3>
-
                   <p className="text-sm leading-relaxed text-muted-foreground">
                     Once a claim is accepted, meetup details stay hidden until
                     approved by campus administrators.
@@ -731,6 +881,77 @@ const page = () => {
           </div>
         </div>
       </main>
+
+      <Dialog
+        open={!!meetupOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            setMeetupOpen(null);
+            setMeetupDate("");
+            setMeetupLocation("");
+          }
+        }}
+      >
+        <DialogContent className="rounded-[2rem] border-border bg-background sm:max-w-md">
+          <DialogHeader className="space-y-3 text-left">
+            <DialogTitle className="text-2xl font-black tracking-[-0.04em]">
+              Schedule Meetup
+            </DialogTitle>
+            <DialogDescription className="leading-relaxed text-muted-foreground">
+              Set a campus meetup date and location for the item handover.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 mt-2">
+            <div className="space-y-2">
+              <Label className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground">
+                Meetup Date & Time
+              </Label>
+              <Input
+                type="datetime-local"
+                value={meetupDate}
+                onChange={(e) => setMeetupDate(e.target.value)}
+                className="rounded-2xl border-border bg-background/70 h-11"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground">
+                Meetup Location
+              </Label>
+              <Input
+                type="text"
+                placeholder="e.g. Library Lobby, Building A Entrance"
+                value={meetupLocation}
+                onChange={(e) => setMeetupLocation(e.target.value)}
+                className="rounded-2xl border-border bg-background/70 h-11"
+              />
+            </div>
+
+            <div className="flex flex-col gap-3 sm:flex-row pt-2">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setMeetupOpen(null);
+                  setMeetupDate("");
+                  setMeetupLocation("");
+                }}
+                className="h-11 flex-1 rounded-2xl text-[10px] font-black uppercase tracking-[0.25em]"
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleScheduleMeetup}
+                disabled={meetupLoading}
+                className="h-11 flex-1 rounded-2xl text-[10px] font-black uppercase tracking-[0.25em]"
+              >
+                <CalendarDays className="mr-2 h-4 w-4" />
+                {meetupLoading ? "Saving..." : "Confirm Meetup"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
