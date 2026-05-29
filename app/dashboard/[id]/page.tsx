@@ -80,7 +80,7 @@ type RequestProps = {
   eventLocation: string;
   eventDate: string;
   identifyingDetail: string;
-  requestedBt: string;
+  requestedBy: string;
   status: "approved" | "pending" | "rejected" | "verified";
   proof?: string;
   meetupDate?: string;
@@ -110,6 +110,12 @@ const page = () => {
   const [meetupDate, setMeetupDate] = useState("");
   const [meetupLocation, setMeetupLocation] = useState("");
   const [meetupLoading, setMeetupLoading] = useState(false);
+  const [myRequests, setMyRequests] = useState<any[]>([]);
+  const [loadingMyRequests, setLoadingMyRequests] = useState(true);
+  const [fullscreenImage, setFullscreenProof] = useState<string | null>(null);
+  const [itemHasRequests, setItemHasRequests] = useState<
+    Record<string, boolean>
+  >({});
 
   useEffect(() => {
     const subscribe = useUser.getState().subscribeToRequests;
@@ -143,6 +149,97 @@ const page = () => {
     return () => unsubscribe();
   }, [id]);
 
+  useEffect(() => {
+    if (!id) return;
+
+    const requestsRef = ref(database, "request");
+
+    const unsubscribe = onValue(requestsRef, async (snapshot) => {
+      const data = snapshot.val();
+
+      if (!data) {
+        setMyRequests([]);
+        setLoadingMyRequests(false);
+        return;
+      }
+
+      const allRequests: any[] = [];
+
+      for (const itemId in data) {
+        const itemRequests = data[itemId];
+
+        for (const requestId in itemRequests) {
+          const request = itemRequests[requestId];
+
+          if (request.requestedBy === id) {
+            allRequests.push({
+              id: requestId,
+              itemId,
+              ...request,
+            });
+          }
+        }
+      }
+
+      const itemsSnapshot = await new Promise<any>((resolve) => {
+        onValue(ref(database, "items"), (snap) => resolve(snap.val()), {
+          onlyOnce: true,
+        });
+      });
+
+      const mergedRequests = allRequests.map((request) => {
+        const item = itemsSnapshot?.[request.itemId];
+
+        return {
+          ...request,
+          itemData: item || null,
+          posterData: {
+            name: item?.user?.fullName || "Unknown User",
+            profile: item?.user.profile || "",
+            id: item?.user.studentId || "",
+            social: item?.user.social,
+          },
+        };
+      });
+
+      setMyRequests(mergedRequests);
+      setLoadingMyRequests(false);
+    });
+
+    return () => unsubscribe();
+  }, [id]);
+
+  useEffect(() => {
+    const requestsRef = ref(database, "request");
+
+    const unsubscribe = onValue(requestsRef, (snapshot) => {
+      const data = snapshot.val();
+
+      if (!data) {
+        setItemHasRequests({});
+        return;
+      }
+
+      const flags: Record<string, boolean> = {};
+
+      for (const itemId in data) {
+        const itemRequests = data[itemId];
+
+        const hasPending = Object.values(itemRequests).some(
+          (req: any) => req.status === "pending",
+        );
+
+        if (hasPending) {
+          flags[itemId] = true;
+        }
+      }
+
+      setItemHasRequests(flags);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
   const fetchRequestsForItem = (itemId: string) => {
     setLoadingRequests(true);
     const requestsRef = ref(database, `request/${itemId}`);
@@ -162,17 +259,17 @@ const page = () => {
   };
 
   const handleAcceptRequest = async (itemId: string, requestId: string) => {
-    try {
-      const updates: any = {};
-      updates[`request/${itemId}/${requestId}/status`] = "approved";
-      updates[`items/${itemId}/itemType`] = "recovered";
-      await update(ref(database), updates);
-      toast.success("Request approved! Coordinate the meetup next.");
-    } catch (error) {
-      console.error("Error accepting request:", error);
-      toast.error("Failed to approve request.");
-    }
-  };
+  try {
+    await update(ref(database), {
+      [`request/${itemId}/${requestId}/status`]: "approved",
+    });
+
+    toast.success("Request approved! Now awaiting admin/meetup process.");
+  } catch (error) {
+    console.error("Error accepting request:", error);
+    toast.error("Failed to approve request.");
+  }
+};
 
   const handleRejectRequest = async (itemId: string, requestId: string) => {
     try {
@@ -187,32 +284,37 @@ const page = () => {
   };
 
   const handleScheduleMeetup = async () => {
-    if (!meetupOpen) return;
-    if (!meetupDate.trim() || !meetupLocation.trim()) {
-      toast.error("Please fill in both meetup date and location.");
-      return;
-    }
-    setMeetupLoading(true);
-    try {
-      await update(ref(database), {
-        [`request/${meetupOpen.itemId}/${meetupOpen.requestId}/meetupDate`]:
-          meetupDate,
-        [`request/${meetupOpen.itemId}/${meetupOpen.requestId}/meetupLocation`]:
-          meetupLocation,
-        [`request/${meetupOpen.itemId}/${meetupOpen.requestId}/status`]:
-          "approved",
-      });
-      toast.success("Meetup scheduled successfully!");
-      setMeetupOpen(null);
-      setMeetupDate("");
-      setMeetupLocation("");
-    } catch (error) {
-      console.error("Error scheduling meetup:", error);
-      toast.error("Failed to schedule meetup.");
-    } finally {
-      setMeetupLoading(false);
-    }
-  };
+  if (!meetupOpen) return;
+
+  if (!meetupDate.trim() || !meetupLocation.trim()) {
+    toast.error("Please fill in both meetup date and location.");
+    return;
+  }
+
+  setMeetupLoading(true);
+
+  try {
+    const updates: any = {};
+    updates[`request/${meetupOpen.itemId}/${meetupOpen.requestId}/meetupDate`] =
+      meetupDate;
+
+    updates[`request/${meetupOpen.itemId}/${meetupOpen.requestId}/meetupLocation`] =
+      meetupLocation;
+
+    await update(ref(database), updates);
+
+    toast.success("Meetup scheduled successfully!");
+
+    setMeetupOpen(null);
+    setMeetupDate("");
+    setMeetupLocation("");
+  } catch (error) {
+    console.error("Error scheduling meetup:", error);
+    toast.error("Failed to schedule meetup.");
+  } finally {
+    setMeetupLoading(false);
+  }
+};
 
   const handleDeleteItem = async (imageId: string, itemId: string) => {
     try {
@@ -233,13 +335,36 @@ const page = () => {
     }
   };
 
+  const openProof = (url: string) => {
+    if (!url) return;
+    setFullscreenProof(url);
+  };
+
+  const getStatusLabel = (status: string) => {
+  switch (status) {
+    case "pending":
+      return "Waiting for poster approval";
+
+    case "approved":
+      return "Awaiting admin approval";
+
+    case "verified":
+      return "Verified & completed";
+
+    case "rejected":
+      return "Rejected";
+
+    default:
+      return status;
+  }
+};
+
   return (
     <div className="relative min-h-screen overflow-hidden bg-background text-foreground">
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,hsla(var(--primary)/0.08),transparent_35%)]" />
       <div className="absolute inset-0 bg-[linear-gradient(to_right,hsl(var(--border)/0.15)_1px,transparent_1px),linear-gradient(to_bottom,hsl(var(--border)/0.15)_1px,transparent_1px)] bg-size-[80px_80px] opacity-20" />
 
       <main className="relative z-10 mx-auto flex w-full max-w-7xl flex-col gap-5 px-3 py-3 sm:px-4 sm:py-4 md:px-6 md:py-6 lg:gap-8 lg:px-8 lg:py-10">
-        {/* Header */}
         <motion.div
           initial={{ opacity: 0, y: 24 }}
           animate={{ opacity: 1, y: 0 }}
@@ -453,16 +578,22 @@ const page = () => {
                                   }}
                                 >
                                   <DialogTrigger asChild>
-                                    <Button
-                                      variant="outline"
-                                      className="h-11 rounded-2xl border-border bg-background/70 px-5 text-[10px] font-black uppercase tracking-[0.25em] sm:h-12"
-                                    >
-                                      <ArrowUpRight className="mr-2 h-4 w-4" />
-                                      View Requests
-                                    </Button>
+                                    <div className="relative">
+                                      <Button
+                                        variant="outline"
+                                        className="h-11 rounded-2xl border-border bg-background/70 px-5 text-[10px] font-black uppercase tracking-[0.25em] sm:h-12"
+                                      >
+                                        <ArrowUpRight className="mr-2 h-4 w-4" />
+                                        View Requests
+                                      </Button>
+
+                                      {itemHasRequests[item.id] && (
+                                        <span className="absolute -top-1 -right-1 h-3 w-3 rounded-full bg-red-500 animate-pulse" />
+                                      )}
+                                    </div>
                                   </DialogTrigger>
 
-                                  <DialogContent className="rounded-[2rem] border-border bg-background sm:max-w-2xl max-h-[80vh] overflow-y-auto">
+                                  <DialogContent className="rounded-[2rem] customScroll border-border bg-background sm:max-w-2xl max-h-[80vh] overflow-y-auto">
                                     <DialogHeader className="space-y-3 text-left">
                                       <DialogTitle className="text-2xl font-black tracking-[-0.04em]">
                                         Claims for "{item.title}"
@@ -527,7 +658,7 @@ const page = () => {
                                                       : "bg-primary/20 text-primary"
                                                 }`}
                                               >
-                                                {request.status}
+                                                {getStatusLabel(request.status)}
                                               </Badge>
                                             </div>
 
@@ -659,7 +790,13 @@ const page = () => {
                                                     </p>
                                                     <img
                                                       src={request.proof}
-                                                      className="rounded-xl w-full max-h-40 object-cover border border-border"
+                                                      onClick={() =>
+                                                        openProof(
+                                                          request.proof!,
+                                                        )
+                                                      }
+                                                      className="rounded-xl w-full max-h-40 object-cover border border-border cursor-pointer select-none"
+                                                      draggable={false}
                                                       alt="Proof"
                                                     />
                                                   </div>
@@ -714,7 +851,13 @@ const page = () => {
                                                     </p>
                                                     <img
                                                       src={request.proof}
-                                                      className="rounded-xl w-full max-h-40 object-cover border border-border"
+                                                      onClick={() =>
+                                                        openProof(
+                                                          request.proof!,
+                                                        )
+                                                      }
+                                                      className="rounded-xl w-full max-h-40 object-cover border border-border cursor-pointer select-none"
+                                                      draggable={false}
                                                       alt="Proof"
                                                     />
                                                   </div>
@@ -855,12 +998,218 @@ const page = () => {
               className="space-y-1"
             >
               <h2 className="text-lg font-black tracking-[-0.03em] sm:text-xl">
-                Live Activity
+                Your Requests
               </h2>
+
               <p className="text-sm text-muted-foreground">
-                Realtime claim and ping updates
+                Track your submitted claims and meetup schedules
               </p>
             </motion.div>
+
+            {loadingMyRequests ? (
+              <Card className="rounded-[2rem] border-border bg-card/60 backdrop-blur-xl">
+                <CardContent className="p-6">
+                  <p className="text-sm text-muted-foreground">
+                    Loading your requests...
+                  </p>
+                </CardContent>
+              </Card>
+            ) : myRequests.length > 0 ? (
+              myRequests
+                .sort((a, b) => b.createdAt - a.createdAt)
+                .map((request, index) => (
+                  <motion.div
+                    key={request.id}
+                    initial={{ opacity: 0, y: 24 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: index * 0.08 }}
+                  >
+                    <Card className="overflow-hidden rounded-[1.75rem] border-border bg-card/60 backdrop-blur-xl">
+                      <CardContent className="space-y-4 p-5">
+                        <div className="flex items-center justify-between">
+                          <Badge
+                            className={`capitalize ${
+                              request.status === "approved"
+                                ? "bg-green-500/20 text-green-600"
+                                : request.status === "rejected"
+                                  ? "bg-destructive/20 text-destructive"
+                                  : "bg-primary/20 text-primary"
+                            }`}
+                          >
+                            {getStatusLabel(request.status)}
+                          </Badge>
+
+                          <p className="text-xs text-muted-foreground">
+                            {request.eventDate}
+                          </p>
+                        </div>
+
+                        {request.itemData && (
+                          <div className="flex gap-3">
+                            <img
+                              src={request.itemData.image}
+                              alt={request.itemData.title}
+                              className="h-20 w-20 rounded-2xl pointer-events-none object-cover border border-border"
+                            />
+
+                            <div className="flex-1">
+                              <h3 className="text-sm font-black leading-tight">
+                                {request.itemData.title}
+                              </h3>
+
+                              <p className="mt-1 text-xs text-muted-foreground">
+                                {request.itemData.location}
+                              </p>
+
+                              <Badge
+                                variant="outline"
+                                className="mt-2 rounded-full"
+                              >
+                                {request.itemData.category}
+                              </Badge>
+                            </div>
+                          </div>
+                        )}
+
+                        <Separator />
+
+                        <div className="space-y-3">
+                          <div>
+                            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground">
+                              Your Message
+                            </p>
+
+                            <p className="mt-1 text-sm italic text-foreground">
+                              "{request.identifyingDetail}"
+                            </p>
+                          </div>
+
+                          {request.additionalInfo && (
+                            <div>
+                              <p className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground">
+                                Additional Info
+                              </p>
+
+                              <p className="mt-1 text-sm italic text-foreground">
+                                "{request.additionalInfo}"
+                              </p>
+                            </div>
+                          )}
+                        </div>
+
+                        {(request.status === "approved" ||
+                          request.status === "verified") && (
+                          <div className="rounded-2xl border border-green-500/30 bg-green-500/10 p-4 space-y-3">
+                            <div className="flex items-center gap-2">
+                              <CalendarDays className="h-4 w-4 text-green-600" />
+
+                              <p className="text-[10px] font-black uppercase tracking-[0.2em] text-green-600">
+                                Meetup Details
+                              </p>
+                            </div>
+
+                            {request.meetupLocation ? (
+                              <>
+                                <div>
+                                  <p className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground">
+                                    Location
+                                  </p>
+
+                                  <p className="text-sm font-bold">
+                                    📍 {request.meetupLocation}
+                                  </p>
+                                </div>
+
+                                <div>
+                                  <p className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground">
+                                    Date & Time
+                                  </p>
+
+                                  <p className="text-sm font-bold">
+                                    📅 {request.meetupDate}
+                                  </p>
+                                </div>
+                                <div className="rounded-2xl border border-border bg-background/60 p-4">
+                                  <p className="text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground mb-3">
+                                    Meeting With
+                                  </p>
+
+                                  <div className="flex items-center gap-3">
+                                    <Avatar className="h-12 w-12 border border-border">
+                                      <AvatarImage
+                                        src={request.posterData?.profile}
+                                      />
+                                      <AvatarFallback>
+                                        {request.posterData?.name?.charAt(0)}
+                                      </AvatarFallback>
+                                    </Avatar>
+
+                                    <div>
+                                      <p className="text-sm font-bold">
+                                        {request.posterData?.name}
+                                      </p>
+
+                                      <p className="text-xs text-muted-foreground">
+                                        Poster ID: {request.posterData?.id}
+                                      </p>
+
+                                      <p className="text-xs text-muted-foreground">
+                                        Social:{" "}
+                                        <a
+                                          className="text-blue-500"
+                                          href={request.posterData?.social}
+                                          target="_blank"
+                                        >
+                                          Click Me
+                                        </a>
+                                      </p>
+
+                                      {(request.status === "approved" ||
+                                        request.status === "verified") && (
+                                        <p className="text-xs text-green-600 font-medium mt-1">
+                                          ✅ Meetup approved with this user
+                                        </p>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              </>
+                            ) : (
+                              <p className="text-sm text-muted-foreground italic">
+                                Waiting for the poster to schedule the meetup.
+                              </p>
+                            )}
+                          </div>
+                        )}
+
+                        {request.status === "rejected" && (
+                          <div className="rounded-2xl border border-destructive/20 bg-destructive/5 p-4">
+                            <p className="text-sm text-destructive font-medium">
+                              Your request was rejected by the poster.
+                            </p>
+                          </div>
+                        )}
+
+                        {request.status === "pending" && (
+                          <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4">
+                            <p className="text-sm text-primary font-medium">
+                              Waiting for the poster to review your request.
+                            </p>
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+                  </motion.div>
+                ))
+            ) : (
+              <Card className="rounded-[2rem] border-border bg-card/60 backdrop-blur-xl">
+                <CardContent className="p-10 text-center">
+                  <p className="text-muted-foreground">
+                    You haven't submitted any requests yet.
+                  </p>
+                </CardContent>
+              </Card>
+            )}
 
             <Card className="overflow-hidden rounded-[1.75rem] border-primary/10 bg-card/60 backdrop-blur-xl lg:rounded-[2rem]">
               <CardContent className="space-y-4 p-4 sm:p-5 md:p-6">
@@ -868,12 +1217,14 @@ const page = () => {
                   <Badge className="rounded-full bg-primary/10 px-4 py-2 text-[10px] font-black uppercase tracking-[0.25em] text-primary">
                     Safety Protocol
                   </Badge>
+
                   <h3 className="text-xl font-black leading-tight tracking-[-0.04em] sm:text-2xl">
                     Secure Campus Meetup
                   </h3>
+
                   <p className="text-sm leading-relaxed text-muted-foreground">
-                    Once a claim is accepted, meetup details stay hidden until
-                    approved by campus administrators.
+                    Both the poster and requester can track approved meetup
+                    schedules in realtime.
                   </p>
                 </div>
               </CardContent>
@@ -952,6 +1303,30 @@ const page = () => {
           </div>
         </DialogContent>
       </Dialog>
+      {fullscreenImage && (
+        <div
+          className="fixed inset-0 z-9999 flex items-center justify-center bg-black/90 p-4"
+          onClick={() => setFullscreenProof(null)}
+        >
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setFullscreenProof(null);
+            }}
+            className="absolute right-4 top-4 z-10000 rounded-full bg-white/10 p-3 text-white backdrop-blur-md transition hover:bg-white/20"
+          >
+            ✕
+          </button>
+
+          <img
+            src={fullscreenImage}
+            className="max-h-[90vh] max-w-[95vw] rounded-xl object-contain shadow-2xl"
+            alt="Fullscreen proof"
+            onClick={(e) => e.stopPropagation()}
+            draggable={false}
+          />
+        </div>
+      )}
     </div>
   );
 };

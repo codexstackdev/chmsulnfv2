@@ -50,25 +50,55 @@ export const useUser = create<UserData>()(
       },
 
       subscribeToRequests: () => {
+        const user = get().user;
+
+        if (!user?._id) return;
+
         const requestsRef = ref(db, "request");
+        const itemsRef = ref(db, "items");
 
-        onValue(requestsRef, (snapshot) => {
-          const data = snapshot.val();
-          if (data) {
-            const requestsArray = Object.values(data) as any[];
-            
-            const total = requestsArray.length;
-            const pending = requestsArray.filter(req => req.status === "pending").length;
-            const closed = requestsArray.filter(req => req.status === "closed" || req.status === "rejected").length;
+        onValue(itemsRef, (itemsSnapshot) => {
+          const itemsData = itemsSnapshot.val() || {};
 
-            set({ 
+          const myItemIds = Object.entries(itemsData)
+            .filter(([_, item]: any) => item.postedBy === user._id)
+            .map(([itemId]) => itemId);
+
+          onValue(requestsRef, (snapshot) => {
+            const requestsData = snapshot.val() || {};
+
+            let total = 0;
+            let pending = 0;
+            let closed = 0;
+
+            myItemIds.forEach((itemId) => {
+              const itemRequests = requestsData[itemId];
+
+              if (!itemRequests) return;
+
+              Object.values(itemRequests).forEach((req: any) => {
+                total++;
+
+                if (req.status === "pending") {
+                  pending++;
+                }
+
+                if (
+                  req.status === "approved" ||
+                  req.status === "verified" ||
+                  req.status === "rejected"
+                ) {
+                  closed++;
+                }
+              });
+            });
+
+            set({
               requestCount: total,
               pendingCount: pending,
-              closedCount: closed
+              closedCount: closed,
             });
-          } else {
-            set({ requestCount: 0, pendingCount: 0, closedCount: 0 });
-          }
+          });
         });
       },
 
@@ -81,6 +111,6 @@ export const useUser = create<UserData>()(
       name: "user-session",
       storage: createJSONStorage(() => sessionStorage),
       partialize: (state) => ({ user: state.user }),
-    }
-  )
+    },
+  ),
 );

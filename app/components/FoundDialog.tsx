@@ -23,6 +23,11 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
+import { authenticator } from "../hooks/actions";
+import { upload } from "@imagekit/next";
+import { push, ref, set } from "firebase/database";
+import { database } from "../lib/firebase";
+import { useUser } from "../store";
 
 const FoundThisItemDialog = ({
   itemTitle,
@@ -30,7 +35,7 @@ const FoundThisItemDialog = ({
   trigger,
 }: {
   itemTitle?: string;
-  itemId:string;
+  itemId: string;
   trigger: React.ReactNode;
 }) => {
   const [proofPreview, setProofPreview] = useState<string | null>(null);
@@ -41,6 +46,8 @@ const FoundThisItemDialog = ({
   const month = String(today.getMonth() + 1).padStart(2, "0");
   const day = String(today.getDate()).padStart(2, "0");
   const maxDate = `${year}-${month}-${day}`;
+  const [fileRaw, setFileRaw] = useState<File | null>(null);
+  const user = useUser((s) => s.user);
 
   const [form, setForm] = useState({
     eventLocation: "",
@@ -50,22 +57,62 @@ const FoundThisItemDialog = ({
   });
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => setProofPreview(reader.result as string);
-    reader.readAsDataURL(file);
+    const raw = e.target.files?.[0];
+    if (!raw) return toast.error("Please select a photo");
+
+    const preview = URL.createObjectURL(raw);
+    setProofPreview(preview);
+    setFileRaw(raw);
   };
 
-  const handleSubmit = async () => {
-    if (!form.eventLocation || !form.eventDate || !form.contactNumber) {
-      toast.error("Please fill in all required fields.");
-      return;
+
+const handleSubmit = async () => {
+  if (!form.eventLocation || !form.eventDate || !form.contactNumber) {
+    return toast.error("Please fill in all required fields");
+  }
+
+  setSubmitting(true);
+
+  try {
+    let uploadResponse: any = null;
+
+    if (fileRaw) {
+      const { signature, expire, token, publicKey } = await authenticator();
+
+      uploadResponse = await upload({
+        expire,
+        token,
+        signature,
+        publicKey,
+        file: fileRaw,
+        fileName: `proof-${Date.now()}`,
+        folder: "/proofs",
+      });
     }
-    setSubmitting(true);
-    await new Promise((r) => setTimeout(r, 1200));
-    toast.success("Match request submitted! The owner will be notified.");
-    setSubmitting(false);
+
+    const requestRef = push(ref(database, `request/${itemId}/${user?._id}`));
+
+    await set(requestRef, {
+      id: requestRef.key,
+      itemId,
+      eventLocation: form.eventLocation,
+      eventDate: form.eventDate,
+      contactNumber: form.contactNumber,
+      identifyingDetail: form.message || "",
+      proof: uploadResponse?.url || null,
+      fileId: uploadResponse?.fileId || null,
+
+      claimerName: user?.fullName,
+      claimerProfile: user?.profile,
+      claimerStudentId: user?.studentId,
+      requestedBy: user?._id,
+
+      status: "pending",
+      createdAt: Date.now(),
+    });
+
+    toast.success("Match request submitted!");
+
     setOpen(false);
     setForm({
       eventLocation: "",
@@ -73,8 +120,16 @@ const FoundThisItemDialog = ({
       message: "",
       contactNumber: "",
     });
+
     setProofPreview(null);
-  };
+    setFileRaw(null);
+  } catch (error) {
+    console.error(error);
+    toast.error("Failed to submit request");
+  } finally {
+    setSubmitting(false);
+  }
+};
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>

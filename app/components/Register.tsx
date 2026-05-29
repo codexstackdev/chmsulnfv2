@@ -2,7 +2,7 @@
 import { motion } from "motion/react";
 import { ChangeEvent, useState } from "react";
 import { toast } from "sonner";
-import { authenticator, deleteImage, register } from "../hooks/actions";
+import { authenticator, deleteImageClient, register } from "../hooks/actions";
 import {
   ImageKitAbortError,
   ImageKitInvalidRequestError,
@@ -102,7 +102,7 @@ const Register = ({ isSuccess }: { isSuccess: () => void }) => {
           setFileRaw(null);
           isSuccess();
         } else {
-          await deleteImage(uploadResponse.fileId as string);
+          await deleteImageClient(uploadResponse.fileId as string);
           toast.error(data.message);
         }
       }

@@ -17,6 +17,7 @@ import {
   FileText,
   CheckCircle2,
   AlertTriangle,
+  Lock,
 } from "lucide-react";
 
 import { motion } from "framer-motion";
@@ -68,15 +69,15 @@ type ItemProps = {
   user: User;
 };
 
+type RequestProps = {
+  id: string;
+  status: "approved" | "pending" | "rejected";
+  claimerStudentId?: string;
+};
+
 const fadeUp = {
-  hidden: {
-    opacity: 0,
-    y: 24,
-  },
-  visible: {
-    opacity: 1,
-    y: 0,
-  },
+  hidden: { opacity: 0, y: 24 },
+  visible: { opacity: 1, y: 0 },
 };
 
 const ItemDetailPage = () => {
@@ -88,9 +89,12 @@ const ItemDetailPage = () => {
   const [loading, setLoading] = useState(true);
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [error, setError] = useState("");
+  const [requests, setRequests] = useState<RequestProps[]>([]);
+  const [loadingRequests, setLoadingRequests] = useState(false);
 
   const router = useRouter();
 
+  // Fetch item data
   useEffect(() => {
     try {
       const itemRef = ref(database, `/items/${itemId}`);
@@ -99,13 +103,12 @@ const ItemDetailPage = () => {
         itemRef,
         (snapshot) => {
           if (snapshot.exists()) {
-            setItemData(snapshot.val());
+            setItemData({ id: itemId as string, ...snapshot.val() });
             setError("");
           } else {
             setItemData(null);
             setError("Item not found");
           }
-
           setLoading(false);
         },
         () => {
@@ -122,9 +125,59 @@ const ItemDetailPage = () => {
     }
   }, [itemId]);
 
+  // Fetch requests for this item
+  useEffect(() => {
+    if (!itemId) return;
+    setLoadingRequests(true);
+    try {
+      const requestsRef = ref(database, `request/${itemId}`);
+      const unsubscribe = onValue(
+        requestsRef,
+        (snapshot) => {
+          if (snapshot.exists()) {
+            const data = snapshot.val();
+            const requestsList = Object.entries(data).map(([key, value]) => ({
+              id: key,
+              ...(value as any),
+            }));
+            setRequests(requestsList);
+          } else {
+            setRequests([]);
+          }
+          setLoadingRequests(false);
+        },
+        () => {
+          setRequests([]);
+          setLoadingRequests(false);
+        },
+      );
+      return () => unsubscribe();
+    } catch (error) {
+      console.error(error);
+      setLoadingRequests(false);
+    }
+  }, [itemId]);
+
   const isLost = itemData?.itemType === "lost";
   const isRecovered = itemData?.itemType === "recovered";
   const isOwner = userId === itemData?.user._id;
+
+  // Get current user's request status (if any)
+  const userRequest = useMemo(() => {
+    if (!userId) return null;
+    return requests.find((req) => req.id === userId);
+  }, [requests, userId]);
+
+  // Determine button state:
+  // - Disabled if user has approved or pending request
+  // - Enabled if user has no request OR rejected request
+  const isButtonDisabled = userRequest?.status === "approved" || userRequest?.status === "pending";
+  const buttonDisabledReason =
+    userRequest?.status === "approved"
+      ? "Your claim is approved. Awaiting meetup coordination."
+      : userRequest?.status === "pending"
+      ? "Your request is pending owner verification."
+      : null;
 
   const content = useMemo(() => {
     if (isLost) {
@@ -196,8 +249,13 @@ const ItemDetailPage = () => {
   };
 
   const ctaButton = (
-    <Button className="h-14 flex-1 rounded-2xl p-5 text-xs font-black uppercase tracking-[0.3em] transition-all duration-300 hover:scale-[1.01] active:scale-[0.98]">
-      <Fingerprint className="mr-3 h-4 w-4" />
+    <Button
+      disabled={isButtonDisabled}
+      title={buttonDisabledReason || undefined}
+      className="h-14 flex-1 rounded-2xl p-5 text-xs font-black uppercase tracking-[0.3em] transition-all duration-300 hover:scale-[1.01] active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed"
+    >
+      {isButtonDisabled && <Lock className="mr-3 h-4 w-4" />}
+      {!isButtonDisabled && <Fingerprint className="mr-3 h-4 w-4" />}
       {content.cta}
     </Button>
   );
@@ -225,10 +283,7 @@ const ItemDetailPage = () => {
           </p>
         </div>
 
-        <Button
-          onClick={() => router.back()}
-          className="rounded-2xl px-6"
-        >
+        <Button onClick={() => router.back()} className="rounded-2xl px-6">
           Go Back
         </Button>
       </div>
@@ -514,7 +569,7 @@ const ItemDetailPage = () => {
                     />
                   )}
 
-                  {isOwner && (
+                  {isOwner && !isRecovered && (
                     <Button
                       variant="outline"
                       disabled={deleteLoading}
@@ -529,6 +584,40 @@ const ItemDetailPage = () => {
                     </Button>
                   )}
                 </motion.div>
+
+                {/* Show user's request status if they have one */}
+                {userRequest && !isOwner && (
+                  <div
+                    className={`rounded-2xl border p-4 ${
+                      userRequest.status === "approved"
+                        ? "border-green-200 bg-green-50"
+                        : userRequest.status === "pending"
+                        ? "border-amber-200 bg-amber-50"
+                        : "border-red-200 bg-red-50"
+                    }`}
+                  >
+                    <p
+                      className={`text-sm font-semibold ${
+                        userRequest.status === "approved"
+                          ? "text-green-800"
+                          : userRequest.status === "pending"
+                          ? "text-amber-800"
+                          : "text-red-800"
+                      }`}
+                    >
+                      {userRequest.status === "approved"
+                        ? "✓ Your claim was approved!"
+                        : userRequest.status === "pending"
+                        ? "⏳ Your request is pending verification."
+                        : "✕ Your request was rejected."}
+                    </p>
+                    {userRequest.status === "rejected" && (
+                      <p className="text-xs text-red-700 mt-1">
+                        You can resubmit your request.
+                      </p>
+                    )}
+                  </div>
+                )}
               </CardContent>
             </motion.div>
 
@@ -551,16 +640,16 @@ const ItemDetailPage = () => {
 
               <div className="space-y-4">
                 <div className="flex items-center justify-between rounded-2xl border border-border bg-muted/40 px-4 py-4">
-                  <span className="text-sm text-muted-foreground">
-                    Status
-                  </span>
+                  <span className="text-sm text-muted-foreground">Status</span>
 
                   <Badge
-                    className={`rounded-full px-4 py-1.5 text-[10px] font-black uppercase tracking-[0.25em] ${content.statusStyle}`}
+                    className={`rounded-full px-4 py-1.5 text-[10px] font-black uppercase tracking-[0.25em] ${
+                      isRecovered
+                        ? "bg-green-500/20 text-green-700"
+                        : content.statusStyle
+                    }`}
                   >
-                    {isRecovered
-                      ? "Recovered"
-                      : content.statusLabel}
+                    {isRecovered ? "Recovered" : content.statusLabel}
                   </Badge>
                 </div>
 

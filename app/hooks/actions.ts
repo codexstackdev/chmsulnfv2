@@ -86,6 +86,35 @@ export const deleteImage = async(userId:string, fileId:string)=>{
     return { success: false, message: handleError(error)}
   }
 }
+
+export const deleteImageClient = async(fileId:string)=>{
+  try {
+    const req = await fetch(`/api/v1/auth/deleteImage?fileId=${fileId}`,{
+      method: "DELETE",
+      headers,
+    });
+    const data = await req.json();
+    if(!data) return { success: false, message: data.message};
+    return data;
+  } catch (error) {
+    return { success: false, message: handleError(error)}
+  }
+}
+
+export const updateRole = async(id:string, updateId:string, role: "student" | "admin") => {
+  try {
+    const req = await fetch("/api/v1/update/changeRole", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({id, updateId, role})
+    });
+    const data = await req.json();
+    if(!data.success) return { success: false, message: data.message};
+    return data;
+  } catch (error) {
+    return { success: false, message: handleError(error)}
+  }
+}
 //end of auth
 
 
