@@ -71,7 +71,8 @@ type ItemProps = {
 
 type RequestProps = {
   id: string;
-  status: "approved" | "pending" | "rejected";
+  status: "approved" | "pending" | "rejected" | "verified";
+  requestedBy: string;
   claimerStudentId?: string;
 };
 
@@ -94,7 +95,6 @@ const ItemDetailPage = () => {
 
   const router = useRouter();
 
-  // Fetch item data
   useEffect(() => {
     try {
       const itemRef = ref(database, `/items/${itemId}`);
@@ -125,7 +125,6 @@ const ItemDetailPage = () => {
     }
   }, [itemId]);
 
-  // Fetch requests for this item
   useEffect(() => {
     if (!itemId) return;
     setLoadingRequests(true);
@@ -162,15 +161,14 @@ const ItemDetailPage = () => {
   const isRecovered = itemData?.itemType === "recovered";
   const isOwner = userId === itemData?.user._id;
 
-  // Get current user's request status (if any)
   const userRequest = useMemo(() => {
-    if (!userId) return null;
-    return requests.find((req) => req.id === userId);
-  }, [requests, userId]);
+  if (!userId) return null;
 
-  // Determine button state:
-  // - Disabled if user has approved or pending request
-  // - Enabled if user has no request OR rejected request
+  return requests.find(
+    (req: any) => req.requestedBy === userId
+  );
+}, [requests, userId]);
+
   const isButtonDisabled = userRequest?.status === "approved" || userRequest?.status === "pending";
   const buttonDisabledReason =
     userRequest?.status === "approved"
@@ -585,7 +583,6 @@ const ItemDetailPage = () => {
                   )}
                 </motion.div>
 
-                {/* Show user's request status if they have one */}
                 {userRequest && !isOwner && (
                   <div
                     className={`rounded-2xl border p-4 ${

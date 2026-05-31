@@ -65,71 +65,68 @@ const FoundThisItemDialog = ({
     setFileRaw(raw);
   };
 
-
-const handleSubmit = async () => {
-  if (!form.eventLocation || !form.eventDate || !form.contactNumber) {
-    return toast.error("Please fill in all required fields");
-  }
-
-  setSubmitting(true);
-
-  try {
-    let uploadResponse: any = null;
-
-    if (fileRaw) {
-      const { signature, expire, token, publicKey } = await authenticator();
-
-      uploadResponse = await upload({
-        expire,
-        token,
-        signature,
-        publicKey,
-        file: fileRaw,
-        fileName: `proof-${Date.now()}`,
-        folder: "/proofs",
-      });
+  const handleSubmit = async () => {
+    if (!form.eventLocation || !form.eventDate || !form.contactNumber) {
+      return toast.error("Please fill in all required fields");
     }
 
-    const requestRef = push(ref(database, `request/${itemId}/${user?._id}`));
+    setSubmitting(true);
 
-    await set(requestRef, {
-      id: requestRef.key,
-      itemId,
-      eventLocation: form.eventLocation,
-      eventDate: form.eventDate,
-      contactNumber: form.contactNumber,
-      identifyingDetail: form.message || "",
-      proof: uploadResponse?.url || null,
-      fileId: uploadResponse?.fileId || null,
+    try {
+      let uploadResponse: any = null;
 
-      claimerName: user?.fullName,
-      claimerProfile: user?.profile,
-      claimerStudentId: user?.studentId,
-      requestedBy: user?._id,
+      if (fileRaw) {
+        const { signature, expire, token, publicKey } = await authenticator();
 
-      status: "pending",
-      createdAt: Date.now(),
-    });
+        uploadResponse = await upload({
+          expire,
+          token,
+          signature,
+          publicKey,
+          file: fileRaw,
+          fileName: `proof-${Date.now()}`,
+          folder: "/proofs",
+        });
+      }
 
-    toast.success("Match request submitted!");
+      const requestRef = ref(database, `request/${itemId}/${user?._id}`);
 
-    setOpen(false);
-    setForm({
-      eventLocation: "",
-      eventDate: "",
-      message: "",
-      contactNumber: "",
-    });
+      await set(requestRef, {
+        eventLocation: form.eventLocation,
+        eventDate: form.eventDate,
+        contactNumber: form.contactNumber,
+        identifyingDetail: form.message || "",
+        proof: uploadResponse?.url || null,
+        fileId: uploadResponse?.fileId || null,
 
-    setProofPreview(null);
-    setFileRaw(null);
-  } catch (error) {
-    console.error(error);
-    toast.error("Failed to submit request");
-  } finally {
-    setSubmitting(false);
-  }
-};
+        claimerName: user?.fullName,
+        claimerProfile: user?.profile,
+        claimerStudentId: user?.studentId,
+        requestedBy: user?._id,
+
+        status: "pending",
+        createdAt: Date.now(),
+      });
+
+      toast.success("Match request submitted!");
+
+      setOpen(false);
+      setForm({
+        eventLocation: "",
+        eventDate: "",
+        message: "",
+        contactNumber: "",
+      });
+
+      setProofPreview(null);
+      setFileRaw(null);
+    } catch (error) {
+      console.error(error);
+      toast.error("Failed to submit request");
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>

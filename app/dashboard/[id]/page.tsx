@@ -259,17 +259,17 @@ const page = () => {
   };
 
   const handleAcceptRequest = async (itemId: string, requestId: string) => {
-  try {
-    await update(ref(database), {
-      [`request/${itemId}/${requestId}/status`]: "approved",
-    });
+    try {
+      await update(ref(database), {
+        [`request/${itemId}/${requestId}/status`]: "approved",
+      });
 
-    toast.success("Request approved! Now awaiting admin/meetup process.");
-  } catch (error) {
-    console.error("Error accepting request:", error);
-    toast.error("Failed to approve request.");
-  }
-};
+      toast.success("Request approved! Now awaiting admin/meetup process.");
+    } catch (error) {
+      console.error("Error accepting request:", error);
+      toast.error("Failed to approve request.");
+    }
+  };
 
   const handleRejectRequest = async (itemId: string, requestId: string) => {
     try {
@@ -284,37 +284,39 @@ const page = () => {
   };
 
   const handleScheduleMeetup = async () => {
-  if (!meetupOpen) return;
+    if (!meetupOpen) return;
 
-  if (!meetupDate.trim() || !meetupLocation.trim()) {
-    toast.error("Please fill in both meetup date and location.");
-    return;
-  }
+    if (!meetupDate.trim() || !meetupLocation.trim()) {
+      toast.error("Please fill in both meetup date and location.");
+      return;
+    }
 
-  setMeetupLoading(true);
+    setMeetupLoading(true);
 
-  try {
-    const updates: any = {};
-    updates[`request/${meetupOpen.itemId}/${meetupOpen.requestId}/meetupDate`] =
-      meetupDate;
+    try {
+      const updates: any = {};
+      updates[
+        `request/${meetupOpen.itemId}/${meetupOpen.requestId}/meetupDate`
+      ] = meetupDate;
 
-    updates[`request/${meetupOpen.itemId}/${meetupOpen.requestId}/meetupLocation`] =
-      meetupLocation;
+      updates[
+        `request/${meetupOpen.itemId}/${meetupOpen.requestId}/meetupLocation`
+      ] = meetupLocation;
 
-    await update(ref(database), updates);
+      await update(ref(database), updates);
 
-    toast.success("Meetup scheduled successfully!");
+      toast.success("Meetup scheduled successfully!");
 
-    setMeetupOpen(null);
-    setMeetupDate("");
-    setMeetupLocation("");
-  } catch (error) {
-    console.error("Error scheduling meetup:", error);
-    toast.error("Failed to schedule meetup.");
-  } finally {
-    setMeetupLoading(false);
-  }
-};
+      setMeetupOpen(null);
+      setMeetupDate("");
+      setMeetupLocation("");
+    } catch (error) {
+      console.error("Error scheduling meetup:", error);
+      toast.error("Failed to schedule meetup.");
+    } finally {
+      setMeetupLoading(false);
+    }
+  };
 
   const handleDeleteItem = async (imageId: string, itemId: string) => {
     try {
@@ -341,22 +343,37 @@ const page = () => {
   };
 
   const getStatusLabel = (status: string) => {
-  switch (status) {
-    case "pending":
-      return "Waiting for poster approval";
+    switch (status) {
+      case "pending":
+        return "Waiting for poster approval";
 
-    case "approved":
-      return "Awaiting admin approval";
+      case "approved":
+        return "Awaiting admin approval";
 
-    case "verified":
-      return "Verified & completed";
+      case "verified":
+        return "Verified & completed";
 
-    case "rejected":
-      return "Rejected";
+      case "rejected":
+        return "Rejected";
 
-    default:
-      return status;
-  }
+      default:
+        return status;
+    }
+  };
+
+  const formatDateTime = (input: string) => {
+  const date = new Date(input);
+
+  const formatted = date.toLocaleString("en-US", {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
+
+  return formatted.replace(",", "");
 };
 
   return (
@@ -492,7 +509,7 @@ const page = () => {
                                         {item.title}
                                       </h3>
                                       <p className="text-sm text-muted-foreground">
-                                        Posted on {item.date}
+                                        Posted on {formatDateTime(item.date)}
                                       </p>
                                     </div>
                                   </div>
@@ -742,7 +759,7 @@ const page = () => {
                                                             <p className="text-sm font-bold">
                                                               📅{" "}
                                                               {
-                                                                request.meetupDate
+                                                                formatDateTime(request.meetupDate as string)
                                                               }
                                                             </p>
                                                           </div>
@@ -1126,7 +1143,7 @@ const page = () => {
                                   </p>
 
                                   <p className="text-sm font-bold">
-                                    📅 {request.meetupDate}
+                                    📅 {formatDateTime(request.meetupDate)}
                                   </p>
                                 </div>
                                 <div className="rounded-2xl border border-border bg-background/60 p-4">
